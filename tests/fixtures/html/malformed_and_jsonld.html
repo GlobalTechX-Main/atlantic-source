@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Malformed Markup Test</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Corporation",
+    "name": "Moncton Industrial Repair",
+    "email": "sales@monctonrepair.example.com",
+    "telephone": "506-555-0888"
+  }
+  </script>
+</head>
+<body>
+  <div>
+    <h1>Machining & Equipment Maintenance</h1>
+    <p>Broken tag <b>unclosed text
+    <a href="mailto:support@monctonrepair.example.com">Contact Support</a>
+  </div>
+  <script>alert('malicious XSS payload');</script>
+  <style>body { display: none; }</style>
+</body>
+</html>

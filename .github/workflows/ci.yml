@@ -1,0 +1,66 @@
+name: AtlanticSource CI Pipeline
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  build-and-test:
+    name: Typecheck, Lint, Test & Build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: atlanticsource
+          POSTGRES_PASSWORD: atlanticsource_secret
+          POSTGRES_DB: atlanticsource_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Push Prisma Schema to Test Database
+        env:
+          DATABASE_URL: postgresql://atlanticsource:atlanticsource_secret@localhost:5432/atlanticsource_test_db?schema=public
+        run: npx prisma db push
+
+      - name: Run TypeScript Strict Type Check
+        run: npm run typecheck
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Vitest Unit & Integration Tests
+        env:
+          DATABASE_URL: postgresql://atlanticsource:atlanticsource_secret@localhost:5432/atlanticsource_test_db?schema=public
+          NEXTAUTH_SECRET: ci_test_secret_must_be_at_least_32_characters_long
+        run: npm run test
+
+      - name: Run Next.js Production Build
+        env:
+          DATABASE_URL: postgresql://atlanticsource:atlanticsource_secret@localhost:5432/atlanticsource_test_db?schema=public
+          NEXTAUTH_SECRET: ci_test_secret_must_be_at_least_32_characters_long
+        run: npm run build
