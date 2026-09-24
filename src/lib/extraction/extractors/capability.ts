@@ -2,7 +2,7 @@ import { BaseExtractor, ExtractorInput, ExtractedClaimCandidate } from "../types
 import { ExtractionMethodEnum } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
-  findPhrase,
+  findFlexiblePhrase,
   splitIntoUnits,
   snippetAround,
   classifyMatchContext,
@@ -38,6 +38,8 @@ interface CapabilityTerm {
 
 interface BestMatch {
   term: CapabilityTerm;
+  /** The wording actually found when it differs from the taxonomy phrase ("welders"). */
+  matchedText?: string;
   confidence: number;
   context: MatchContext;
   locator: string;
@@ -49,7 +51,7 @@ interface BestMatch {
  * Aliases that are ordinary words on many sites ("hydraulics", "ventilation"). They only
  * count at full strength in a page title, heading or on a services page.
  */
-const WEAK_ALIASES = new Set(["hydraulics", "ventilation", "excavation", "high voltage", "civil engineering", "electrical wiring", "equipment installation", "automation systems", "machine automation"]);
+const WEAK_ALIASES = new Set(["hvac", "electricians", "hydraulics", "ventilation", "excavation", "high voltage", "civil engineering", "electrical wiring", "equipment installation", "automation systems", "machine automation"]);
 
 /** Pages whose text is mostly about other people or news, not the company's services. */
 const LOW_VALUE_PAGE = /\/(?:testimonials?|reviews?|blog|news|articles?|posts?|stories|case-stud(?:y|ies)|team|our-team|people|careers?)(?:\/|$|-)/i;
@@ -130,10 +132,10 @@ export class CapabilityExtractor implements BaseExtractor {
       if (isNegatedSentence(unit.text)) continue;
 
       for (const term of terms) {
-        const matches = findPhrase(unit.text, term.phrase);
+        const matches = findFlexiblePhrase(unit.text, term.phrase);
         for (const m of matches) {
           const context = classifyMatchContext(unit.text, m.index, m.length);
-          const aliasFactor = term.isAlias ? 0.95 : 1;
+          const aliasFactor = (term.isAlias ? 0.95 : 1) * (m.exact ? 1 : 0.95);
           const isStrongSpot = unit.locator === "page_title" || unit.locator.startsWith("heading_") || unit.locator === "services_page_body";
           const weakFactor = term.isAlias && WEAK_ALIASES.has(term.phrase.toLowerCase()) && !isStrongSpot ? 0.8 : 1;
           const confidence =
@@ -145,6 +147,7 @@ export class CapabilityExtractor implements BaseExtractor {
           if (!prev || confidence > prev.confidence) {
             best.set(term.capabilityId, {
               term,
+              matchedText: m.exact ? undefined : m.text,
               confidence,
               context,
               locator: unit.locator,
@@ -162,7 +165,8 @@ export class CapabilityExtractor implements BaseExtractor {
     for (const match of best.values()) {
       const boosted = match.context === "DIRECT" && match.directMentions >= 2 ? Math.min(0.98, match.confidence + 0.03) : match.confidence;
       const contextSuffix = match.context === "DIRECT" ? "" : `|context:${match.context}`;
-      const label = match.term.isAlias ? `Matched alias "${match.term.phrase}"` : `Matched "${match.term.phrase}"`;
+      const base = match.term.isAlias ? `Matched alias "${match.term.phrase}"` : `Matched "${match.term.phrase}"`;
+      const label = match.matchedText ? `${base} (written as "${match.matchedText}")` : base;
       claims.push({
         claimType: "CAPABILITY",
         rawValue: match.term.isAlias ? match.term.phrase : match.term.canonicalName,

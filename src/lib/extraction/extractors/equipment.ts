@@ -1,7 +1,7 @@
 import { BaseExtractor, ExtractorInput, ExtractedClaimCandidate } from "../types";
 import { ExtractionMethodEnum } from "@prisma/client";
 import { db } from "@/lib/db";
-import { findPhrase, splitIntoUnits, snippetAround, classifyMatchContext } from "../text";
+import { findFlexiblePhrase, splitIntoUnits, snippetAround, classifyMatchContext } from "../text";
 
 const FALLBACK_EQUIPMENT = [
   { id: "eq_cnc_mill", canonicalName: "CNC Milling Machine", slug: "cnc-mill" },
@@ -42,7 +42,7 @@ export class EquipmentExtractor implements BaseExtractor {
     for (const unit of splitIntoUnits(input.contentText ?? input.visibleText)) {
       for (const eq of equipmentTypes) {
         for (const phrase of [eq.canonicalName, ...(EQUIPMENT_ALIASES[eq.slug] || [])]) {
-          const m = findPhrase(unit, phrase)[0];
+          const m = findFlexiblePhrase(unit, phrase)[0];
           if (!m) continue;
           const context = classifyMatchContext(unit, m.index, m.length);
           // A dealer listing machines for sale is not a shop that owns them.

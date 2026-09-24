@@ -8,7 +8,7 @@ import { CapabilityExtractor } from "@/lib/extraction/extractors/capability";
 import { ServiceRegionExtractor } from "@/lib/extraction/extractors/serviceRegion";
 import { AddressExtractor, cleanAddressSnippet } from "@/lib/extraction/extractors/address";
 import { EquipmentExtractor } from "@/lib/extraction/extractors/equipment";
-import { containsPhrase, classifyMatchContext } from "@/lib/extraction/text";
+import { containsPhrase, classifyMatchContext, findFlexiblePhrase } from "@/lib/extraction/text";
 import { evaluateDeterministicRules } from "@/lib/validation/rulesEngine";
 import { autoPublishEnabled, buildClaimContext } from "@/lib/validation/service";
 import { scoreContactCandidate, selectRfqContactsFromClaims } from "@/lib/contacts/selection";
@@ -118,21 +118,31 @@ describe("Capability context", () => {
     expect(fab?.confidence).toBeGreaterThanOrEqual(0.8);
   });
 
-  it("sends weak-context matches to review instead of approving them", async () => {
-    const claims = await capabilities("Spot Welding Machine\nOur focus is on total service to the metal fabrication industry.");
-    for (const c of claims) {
-      expect(c.confidence).toBeLessThan(0.8);
-      const verdict = evaluateDeterministicRules({
+  it("reviews middling matches and rejects very weak ones", async () => {
+    const verdictFor = async (text: string) => {
+      const [c] = await capabilities(text);
+      return evaluateDeterministicRules({
         supplierCompanyId: "sup",
         supplierName: "Dealer",
         claimType: "CAPABILITY",
-        rawValue: c.rawValue,
-        extractionMethod: c.extractionMethod,
-        extractionConfidence: c.confidence,
-        evidenceText: c.evidenceText,
-      });
-      expect(verdict.decision).toBe("HUMAN_REVIEW");
-    }
+        rawValue: c!.rawValue,
+        extractionMethod: c!.extractionMethod,
+        extractionConfidence: c!.confidence,
+        evidenceText: c!.evidenceText,
+      }).decision;
+    };
+    expect(await verdictFor("Spot Welding Machine")).toBe("HUMAN_REVIEW");
+    expect(await verdictFor("Our focus is on total service to the metal fabrication industry.")).toBe("REJECT");
+    expect(await verdictFor("A graduate of the Civil Engineering Technology program")).toBe("REJECT");
+  });
+
+  it("rejects passing industry and certification mentions but keeps real certifications for a person", () => {
+    const base = { supplierCompanyId: "s", supplierName: "X", extractionMethod: "TAXONOMY_ALIAS", evidenceText: "x" };
+    expect(evaluateDeterministicRules({ ...base, claimType: "INDUSTRY", rawValue: "Mining & Metals", extractionConfidence: 0.6 }).decision).toBe("REJECT");
+    expect(evaluateDeterministicRules({ ...base, claimType: "CERTIFICATION", rawValue: "CWB", normalizedValue: "cwb-organization", extractionConfidence: 0.6 }).decision).toBe("REJECT");
+    expect(
+      evaluateDeterministicRules({ ...base, claimType: "CERTIFICATION", rawValue: "ISO 9001", normalizedValue: "iso-9001", extractionConfidence: 0.8, evidenceText: "We are ISO 9001:2015 certified." }).decision
+    ).toBe("HUMAN_REVIEW");
   });
 
   it("no longer maps Environmental Engineering to NDT inspection", async () => {
@@ -372,5 +382,31 @@ describe("Network retries", () => {
     };
     await expect(withRetry(down, [1, 1])("https://gone.example")).rejects.toThrow("ENOTFOUND");
     expect(calls).toBe(3);
+  });
+});
+
+describe("Flexible wording", () => {
+  const found = (text: string, phrase: string) => findFlexiblePhrase(text, phrase)[0]?.text ?? null;
+
+  it("finds the same service written in different ways", () => {
+    expect(found("We fabricate structural and miscellaneous steel for industry", "Steel Fabrication")).toBe("fabricate structural and miscellaneous steel");
+    expect(found("Fabrication of structural steel and platework", "Structural Steel Fabrication")).toBe("Fabrication of structural steel");
+    expect(found("All of our welders are CWB certified", "Welding")).toBe("welders");
+    expect(found("Precision CNC machining of large parts", "Precision Machining")).toBe("Precision CNC machining");
+    expect(found("Full-service machine shops in Moncton", "Machine Shop")).toBe("machine shops");
+    expect(found("B&M has a large shop for fabricating pipes", "Pipe Fabrication")).toBe("fabricating pipes");
+  });
+
+  it("prefers the exact phrase when it is there", () => {
+    expect(findFlexiblePhrase("Custom Metal Fabrication and more", "Custom Metal Fabrication")[0]?.exact).toBe(true);
+  });
+
+  it("does not glue unrelated words together", () => {
+    expect(found("structural, electrical and steel work", "Structural Steel")).toBeNull();
+    expect(found("Galvanized Duct, Pipe & Fittings", "Pipe Fitting")).toBeNull();
+    expect(found("on the site when preparations began", "Site Preparation")).toBeNull();
+    expect(found("hydraulic excavators for rent", "Hydraulics")).toBeNull();
+    expect(found("our machine is fast", "Machining")).toBeNull();
+    expect(found("heavy steel plate in stock", "Chrome Plating")).toBeNull();
   });
 });

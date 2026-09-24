@@ -93,6 +93,20 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
     }
   }
 
+  // 3b. Clearly weak certification text: an organisation merely mentioned ("works with the
+  // Canadian Welding Bureau"), or a statement that others hold it / it is still in progress.
+  if (input.claimType === "CERTIFICATION" && (input.normalizedValue === "cwb-organization" || input.extractionConfidence < 0.65)) {
+    return {
+      decision: "REJECT",
+      confidence: 0.85,
+      risk: "LOW",
+      reason: "Not a statement that the company holds this certification (organisation mention, in progress, or held by others)",
+      evidenceSupported: false,
+      validatorVersion: "1.2.0",
+      validatorActor: "RULE_ENGINE:WEAK_CERTIFICATION_MENTION",
+    };
+  }
+
   // 4. High-Risk Rule: Certification Safeguard
   // Certifications can NEVER be marked AtlanticSource Verified automatically.
   // They require human review before verification or publishing.
@@ -315,6 +329,23 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
   }
 
   // 7. Deterministic Auto-Approval: Exact Taxonomy Capability Match
+  // Very weak matches are rejected outright so they never reach the review queue: the
+  // extractor scores a term this low when it only describes customers served, appears in a
+  // bio or explainer, or (for industries) is a passing mention with no "industries we serve" context.
+  const rejectBelow: Record<string, number> = { CAPABILITY: 0.5, EQUIPMENT: 0.5, INDUSTRY: 0.65 };
+  const threshold = rejectBelow[input.claimType];
+  if (threshold !== undefined && input.extractionConfidence < threshold && input.extractionMethod !== "TAXONOMY_PHRASE") {
+    return {
+      decision: "REJECT",
+      confidence: 0.85,
+      risk: "LOW",
+      reason: "Term appears only in passing (customers served, biography, explainer or unrelated mention), not as work the company does",
+      evidenceSupported: false,
+      validatorVersion: "1.2.0",
+      validatorActor: "RULE_ENGINE:WEAK_MENTION_REJECT",
+    };
+  }
+
   if (
     (input.claimType === "CAPABILITY" || input.claimType === "INDUSTRY" || input.claimType === "EQUIPMENT") &&
     input.extractionConfidence < 0.8

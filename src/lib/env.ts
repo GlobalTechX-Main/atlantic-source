@@ -23,6 +23,10 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   // "true" lets low-risk crawled facts publish without an admin. Off by default (AGENTS.md rule 4).
   AUTO_PUBLISH_LOW_RISK_FACTS: z.enum(["true", "false"]).default("false"),
+  // Optional AI second opinion on facts the rules leave for review (see AGENTS.md rule 6).
+  AI_REVIEW_ENABLED: z.enum(["true", "false"]).default("false"),
+  OPENAI_API_KEY: z.string().optional(),
+  AI_REVIEW_MODEL: z.string().default("gpt-4o-mini"),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -44,6 +48,8 @@ function parseEnv(): Env {
         EMAIL_PROVIDER: "development",
         LOG_LEVEL: "silent",
         AUTO_PUBLISH_LOW_RISK_FACTS: "false",
+        AI_REVIEW_ENABLED: "false",
+        AI_REVIEW_MODEL: "gpt-4o-mini",
       };
     }
     throw new Error("Invalid environment configuration");

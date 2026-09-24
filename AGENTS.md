@@ -31,10 +31,12 @@ You are working on **AtlanticSource**, a B2B supplier-intelligence and sourcing 
 - NEVER use standard `fetch()` directly on user-supplied or crawler-discovered URLs without pre-resolving DNS and checking IP blacklist rules (loopback, private IPv4/IPv6, link-local, cloud metadata IPs).
 - Always enforce redirect validation, max payload size (5MB), and request timeouts.
 
-### Rule 6: Absolute Prohibitions on AI in Current MVP
-- The MVP version of AtlanticSource contains **NO AI**.
-- Do NOT introduce OpenAI, Anthropic, Ollama, LangChain, vector databases, embeddings, or LLM APIs into any part of the MVP repository.
-- Keep architectural boundaries clean (`ExtractionProvider` interface, `SearchFilterParser` interface) so future AI modules can be plugged in seamlessly without altering entity schemas.
+### Rule 6: AI Is Limited to the Optional Review Second Opinion
+- Extraction, search and all other features stay deterministic (no AI).
+- The ONLY approved AI use is `src/lib/validation/aiReviewer.ts`: an optional second opinion (OpenAI Chat Completions) on facts the rules engine leaves for human review. It is off unless `AI_REVIEW_ENABLED=true` and `OPENAI_API_KEY` is set in `.env`.
+- AI may never decide certifications (recommendation only), never sees anything but public website text, and must fail safe to human review on any error, timeout or unclear answer. Every AI decision is labelled with the model in `validationActor`/`validationReason`.
+- Do NOT add other AI features (embeddings, vector databases, LangChain, AI extraction or search) without a new explicit decision recorded here.
+- Keep architectural boundaries clean (`ExtractionProvider` interface, `SearchFilterParser` interface) so future AI modules can be plugged in without altering entity schemas.
 
 ### Rule 7: Zero Tolerance for Secrets Leakage & Environment Bypasses
 - NEVER hardcode secrets, API keys, passwords, or connection strings in source code or committed documentation.
@@ -58,4 +60,4 @@ Before finalizing any task or outputting completed code:
 2. Run `npm run lint` — 0 warnings/errors.
 3. Run `npm run test` — All unit & integration tests pass.
 4. Verify server-side authorization guards are present on new routes.
-5. Confirm no hardcoded secrets or prohibited AI packages were added.
+5. Confirm no hardcoded secrets were added and no AI use beyond Rule 6's review second opinion.

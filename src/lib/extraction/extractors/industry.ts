@@ -1,7 +1,7 @@
 import { BaseExtractor, ExtractorInput, ExtractedClaimCandidate } from "../types";
 import { ExtractionMethodEnum } from "@prisma/client";
 import { db } from "@/lib/db";
-import { findPhrase, splitIntoUnits, snippetAround } from "../text";
+import { findFlexiblePhrase, splitIntoUnits, snippetAround } from "../text";
 
 const FALLBACK_INDUSTRIES = [
   { id: "ind_mfg", canonicalName: "Industrial Manufacturing", slug: "industrial-manufacturing" },
@@ -51,7 +51,7 @@ export class IndustryExtractor implements BaseExtractor {
       for (const ind of industries) {
         const phrases = [ind.canonicalName, ...(INDUSTRY_ALIASES[ind.slug] || [])];
         for (const phrase of phrases) {
-          const m = findPhrase(unit, phrase)[0];
+          const m = findFlexiblePhrase(unit, phrase)[0];
           if (!m) continue;
           const confidence = phrase === ind.canonicalName ? (inContext ? 0.9 : 0.75) : inContext ? 0.82 : 0.6;
           const prev = best.get(ind.slug);

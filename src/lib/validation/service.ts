@@ -4,6 +4,10 @@ import { approveClaim } from "@/lib/admin/publishing";
 import { logger } from "@/lib/logger";
 import { consolidateExtractedClaims, CanonicalClaimFact } from "./consolidation";
 import { applySupplierRfqContactSelection } from "@/lib/contacts/selection";
+import { secondOpinion, aiReviewConfig } from "./aiReviewer";
+
+/** Upper bound on AI calls per supplier per run, to keep cost predictable. */
+const MAX_AI_REVIEWS_PER_SUPPLIER = 60;
 
 /**
  * Low-risk facts are only published without a person when AUTO_PUBLISH_LOW_RISK_FACTS=true.
@@ -84,6 +88,8 @@ export async function validateAndProcessSupplierClaims(
   stats.totalProcessed = unreviewedClaims.length;
 
   const canonicalFacts: CanonicalClaimFact[] = consolidateExtractedClaims(unreviewedClaims);
+  const aiConfig = aiReviewConfig();
+  let aiCalls = 0;
   stats.uniqueCanonicalFacts = canonicalFacts.length;
   stats.collapsedDuplicates = unreviewedClaims.length - canonicalFacts.length;
 
@@ -117,7 +123,7 @@ export async function validateAndProcessSupplierClaims(
         validatorActor: "RULE_ENGINE:CONTRADICTION_DETECTOR",
       };
     } else {
-      validationResult = await defaultClaimValidator.validateClaim({
+      const validationInput = {
         claimId: firstClaim.id,
         supplierCompanyId,
         supplierName,
@@ -130,7 +136,14 @@ export async function validateAndProcessSupplierClaims(
         pageType: bestPageType,
         evidenceText: combinedEvidence || firstClaim.evidenceText || "",
         surroundingContext,
-      });
+      };
+      validationResult = await defaultClaimValidator.validateClaim(validationInput);
+
+      // Optional AI second opinion for facts the rules could not decide.
+      if (validationResult.decision === "HUMAN_REVIEW" && aiConfig.enabled && aiCalls < MAX_AI_REVIEWS_PER_SUPPLIER) {
+        aiCalls++;
+        validationResult = await secondOpinion(validationInput, validationResult, aiConfig);
+      }
     }
 
     // Check if there is a prior human review decision for this supplier & canonical fact

@@ -125,6 +125,13 @@ export const TAXONOMY_ALIASES: TaxonomyAlias[] = [
   { alias: "Mechanical Contractor", capabilityId: "cap_hvac", normalizedAlias: "mechanical contractor" },
   { alias: "Mechanical Contracting", capabilityId: "cap_hvac", normalizedAlias: "mechanical contracting" },
   { alias: "Powder Coating", capabilityId: "cap_coat", normalizedAlias: "powder coating" },
+  { alias: "Steel Erection", capabilityId: "cap_struct", normalizedAlias: "steel erection" },
+  { alias: "Pipe Fitting", capabilityId: "cap_pipe", normalizedAlias: "pipe fitting" },
+  { alias: "Pipefitting", capabilityId: "cap_pipe", normalizedAlias: "pipefitting" },
+  { alias: "Process Piping", capabilityId: "cap_pipe", normalizedAlias: "process piping" },
+  { alias: "Electricians", capabilityId: "cap_elec", normalizedAlias: "electricians" },
+  { alias: "HVAC", capabilityId: "cap_hvac", normalizedAlias: "hvac" },
+  { alias: "NDT", capabilityId: "cap_ndt", normalizedAlias: "ndt" },
   { alias: "Sandblasting", capabilityId: "cap_coat", normalizedAlias: "sandblasting" },
 ];
 

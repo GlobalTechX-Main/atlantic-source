@@ -62,6 +62,118 @@ export function containsPhrase(text: string, phrase: string): boolean {
 }
 
 /**
+ * Word families for the trade vocabulary, so "fabrication" also finds "fabricate",
+ * "fabricating" and "fabricators", and "welding" also finds "weld" and "welders".
+ * Deliberately hand-written (no general stemming): "machining" must not match "machine"
+ * and "plating" must not match steel "plate".
+ */
+const WORD_FAMILIES: { test: RegExp; pattern: string }[] = [
+  { test: /^weld(?:ing|s|ed|er|ers)?$/i, pattern: "weld(?:ing|s|ed|er|ers)?" },
+  { test: /^fabricat(?:e|es|ed|ing|ion|ions|or|ors)$/i, pattern: "fabricat(?:e|es|ed|ing|ion|ions|or|ors)" },
+  { test: /^machin(?:ing|ed|ist|ists)$/i, pattern: "machin(?:ing|ed|ist|ists)" },
+  { test: /^repairs?$/i, pattern: "repair(?:s|ed|ing)?" },
+  { test: /^installation$/i, pattern: "install(?:s|ed|ing|ation|ations|er|ers)?" },
+  { test: /^maintenance$/i, pattern: "(?:maintenance|maintain(?:s|ed|ing)?)" },
+  { test: /^painting$/i, pattern: "paint(?:s|ed|ing|er|ers)?" },
+  { test: /^coatings?$/i, pattern: "coat(?:s|ed|ing|ings)" },
+  { test: /^inspection$/i, pattern: "inspect(?:s|ed|ing|ion|ions|or|ors)?" },
+  { test: /^testing$/i, pattern: "test(?:s|ed|ing)?" },
+  { test: /^contract(?:ing|or|ors)$/i, pattern: "contract(?:ing|or|ors)" },
+  { test: /^construction$/i, pattern: "construct(?:ion|ing|ed|s)?" },
+  { test: /^millwright(?:ing|s)?$/i, pattern: "millwright(?:ing|s)?" },
+  { test: /^electrical$/i, pattern: "electric(?:al)?" },
+];
+
+/** Words that end a clause: a phrase never stretches across them. */
+const FILLER_STOP = new Set([
+  "is", "are", "was", "were", "be", "the", "our", "we", "you", "your", "with", "by", "to", "in", "on", "at", "from",
+  "that", "which", "who", "as", "into", "than", "not", "no", "engineers", "engineering", "services", "company", "team",
+  "when", "where", "while", "if", "because", "so", "but", "it", "its", "their", "they", "this", "these", "those",
+  "has", "have", "had", "will", "can", "may", "been", "being",
+]);
+const CONJUNCTION = new Set(["&", "and", "or"]);
+
+function tokenPattern(word: string): string {
+  if (word === "&" || word.toLowerCase() === "and") return "(?:&|and)";
+  const family = WORD_FAMILIES.find((f) => f.test.test(word));
+  if (family) return family.pattern;
+  const escaped = escapeRegExp(word);
+  // Plain plurals: "vessel" finds "vessels", "panels" finds "panel". Words ending in
+  // "-ics" ("hydraulics") are subjects, not plurals: "hydraulic" alone is just an adjective.
+  if (/^[A-Za-z]{4,}$/.test(word) && !/ics$/i.test(word)) {
+    const stem = word.replace(/(?:es|s)$/i, "");
+    return stem.length >= 4 && stem !== word ? `${escapeRegExp(stem)}(?:s|es)?` : `${escaped}(?:s|es)?`;
+  }
+  return escaped;
+}
+
+const FILLER = "[\\p{L}\\p{N}&’'.-]+";
+const flexibleCache = new Map<string, RegExp[]>();
+
+function flexibleRegexes(phrase: string): RegExp[] {
+  const key = phrase.toLowerCase();
+  const cached = flexibleCache.get(key);
+  if (cached) return cached;
+
+  const words = phrase.trim().split(/\s+/).filter((w) => w !== "&" && w.toLowerCase() !== "and");
+  const tokens = words.map(tokenPattern);
+  const edge = (body: string) => new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "giu");
+  const regexes: RegExp[] = [];
+
+  const last = tokens[tokens.length - 1]!;
+  const rest = tokens.slice(0, -1);
+  const lastIsAction = WORD_FAMILIES.some((f) => f.test.test(words[words.length - 1]!));
+
+  if (tokens.length === 1) {
+    regexes.push(edge(last));
+  } else {
+    // In order, with up to two describing words between: "structural and miscellaneous steel".
+    // Commas are not allowed in between, so a list like "structural, electrical and steel" does not match.
+    regexes.push(edge(tokens.join(`(?:[\\s/-]+${FILLER}){0,2}?[\\s/-]+`)));
+    // Reversed with "of/for": "fabrication of structural steel", "repair of hydraulic cylinders".
+    regexes.push(edge(`${last}\\s+(?:of|for|on)\\s+(?:${FILLER}\\s+){0,3}?${rest.join("[\\s-]+")}`));
+    // Action first: "we fabricate stainless steel", "repairing hydraulic systems".
+    if (lastIsAction) regexes.push(edge(`${last}\\s+(?:${FILLER}\\s+){0,3}?${rest.join("[\\s-]+")}`));
+  }
+  flexibleCache.set(key, regexes);
+  return regexes;
+}
+
+export interface FlexibleMatch extends PhraseMatch {
+  /** True when the exact phrase was found; false for another word form or word order. */
+  exact: boolean;
+}
+
+/**
+ * Finds a phrase the way people actually write it: the exact phrase first, then other
+ * word forms ("welders", "fabricate"), extra describing words ("stainless and carbon steel
+ * fabrication") and "X of Y" order ("fabrication of structural steel"). A match never
+ * spans clause words like "is", "our" or "with".
+ */
+export function findFlexiblePhrase(text: string, phrase: string): FlexibleMatch[] {
+  const exact = findPhrase(text, phrase).map((m) => ({ ...m, exact: true }));
+  if (exact.length > 0) return exact;
+
+  const found: FlexibleMatch[] = [];
+  for (const rx of flexibleRegexes(phrase)) {
+    rx.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = rx.exec(text)) !== null) {
+      const words = m[0].toLowerCase().split(/[\s,/-]+/).filter(Boolean);
+      // "Pipe & Fittings" is two things, not "pipe fitting": a conjunction right before the
+      // last word joins separate items. ("structural and miscellaneous steel" is still fine.)
+      const joinsSeparateItems = words.length >= 3 && CONJUNCTION.has(words[words.length - 2]!);
+      if (!words.some((w) => FILLER_STOP.has(w)) && !joinsSeparateItems) {
+        found.push({ index: m.index, length: m[0].length, text: m[0], exact: false });
+      }
+      if (m[0].length === 0) rx.lastIndex++;
+    }
+    if (found.length > 0) break;
+  }
+  return found;
+}
+
+/**
  * Splits page text into short evidence units: one per line (block element) and then
  * one per sentence. Units longer than `maxLength` are cut on list-like separators so a
  * single run-on block cannot become one giant "sentence".
@@ -114,9 +226,9 @@ const RESALE_CUE = /\b(?:we\s+(?:sell|carry|stock|distribute)|authori[sz]ed\s+(?
 const AUDIENCE_BEFORE = /\b(?:to|for|serving|serve|serves|supporting|supports?|helping|help|clients?\s+in|customers?\s+in|partner\s+to)\s+(?:the\s+|our\s+|your\s+|all\s+|local\s+|industrial\s+|complex\s+)*(?:[\w&-]+\s+){0,3}$/i;
 const AUDIENCE_AFTER = /^\s*(?:industr(?:y|ies)|facilit(?:y|ies)|shops?|companies|customers|clients|sector|market|challenges|operations|plants|professionals|contractors)\b/i;
 const JOB_TITLE_AFTER = /^\s*(?:manager|supervisor|superintendent|foreman|coordinator|lead|leader|technician|technologist|inspector|engineer|director|specialist|apprentice|helper)s?\b/i;
-const AUDIENCE_YOU = /\b(?:whether\s+you(?:['’]re|\s+are)|if\s+you(?:['’]re|\s+are)|you\s+are\s+an?|for\s+(?:every|any)|ideal\s+for)\s+(?:an?\s+)?(?:[\w&-]+\s+){0,2}$/i;
+const AUDIENCE_YOU = /\b(?:whether\s+you(?:['’]re|\s+are|\s+operate|\s+run|\s+own|\s+manage|\s+work\s+in)?|if\s+you(?:['’]re|\s+are|\s+operate|\s+run)|you\s+are\s+an?|for\s+(?:every|any)|ideal\s+for)\s+(?:an?\s+)?(?:[\w&,-]+\s+){0,5}$/i;
 /** The phrase names a thing ("welding machine", "ventilation system"), not a service. */
-const PRODUCT_AFTER = /^\s*(?:bureau|inspections?|codes?|systems?|machines?|machinery|cent(?:er|re)s?|units?|equipment|products?|registers?|trays?|tools?|supplies|parts|kits?|helmets?|consumables|guns?|torches?|rods?|wire|fans?|dampers?|motors?|pumps?|valves?|components?|solutions?\s+(?:for\s+sale))\b/i;
+const PRODUCT_AFTER = /^\s*(?:bureau|inspections?|codes?|cylinders?|hoses?|fittings?|wire|mesh|systems?|machines?|machinery|cent(?:er|re)s?|units?|equipment|products?|registers?|trays?|tools?|supplies|parts|kits?|helmets?|consumables|guns?|torches?|rods?|wire|fans?|dampers?|motors?|pumps?|valves?|components?|solutions?\s+(?:for\s+sale))\b/i;
 const EDUCATION_CUE = /\b(?:graduate[ds]?|graduated|degree|diploma|program(?:me)?|studying|student|scholarship|university|college|institute\s+of\s+technology|certificate\s+program|course)\b/i;
 const EXPLANATION_AFTER = /^\s*(?:(?:is|are)\s+(?:a|an|the)\s+(?:\w+\s+){0,2}(?:process|method|technique|type|form|way|term|practice)\b|stands\s+for\b)/i;
 /** Article-style headlines: "How Industrial Automation Helps...", "What is CNC machining?" */
