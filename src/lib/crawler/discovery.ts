@@ -37,7 +37,25 @@ const IGNORED_PATH_PATTERNS = [
   /\.png$/i,
   /\.jpg$/i,
   /\.jpeg$/i,
+  /\.(?:gif|webp|svg|mp4|mov|docx?|xlsx?|pptx?|ics|xml|json|rss)$/i,
+  /\/(?:wp-login|wp-admin|wp-json|feed|xmlrpc)/i,
+  /\/(?:privacy|terms|cookie|legal|disclaimer|accessibility|sitemap)/i,
+  /\/(?:careers?|jobs?|employment|join-our-team|work-with-us)(?:\/|$|-)/i,
+  /\/(?:blog|news|press|events?)\/[^/]+/i,
+  /\/(?:fr|fr-ca|es)(?:\/|$)/i,
+  /\/(?:collections|product|products|shop|store)\/[^/]+/i,
 ];
+
+/** Same-site key: www/non-www, trailing slash and index pages count as one page. */
+function dedupeKey(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/\/+$/, "").replace(/\/index\.(?:html?|php|aspx?)$/i, "") || "/";
+    return `${u.hostname.toLowerCase().replace(/^www\./, "")}${path.toLowerCase()}${u.search}`;
+  } catch {
+    return url;
+  }
+}
 
 /**
  * Normalizes a URL string by resolving against base URL, removing hashes,
@@ -80,21 +98,26 @@ export function isSameRegistrableDomain(urlA: string, urlB: string): boolean {
 
 export function classifyUrl(urlStr: string, anchorText: string = ""): PageClassification {
   const textLower = anchorText.toLowerCase();
-
   const path = new URL(urlStr).pathname.toLowerCase();
 
   if (path === "/" || path === "") return "HOME";
 
-  if (path.includes("about") || textLower.includes("about")) return "ABOUT";
-  if (path.includes("service") || textLower.includes("service")) return "SERVICES";
-  if (path.includes("capabilit") || textLower.includes("capabilit")) return "CAPABILITIES";
-  if (path.includes("product") || textLower.includes("product")) return "PRODUCTS";
-  if (path.includes("industr") || textLower.includes("industr")) return "INDUSTRIES";
-  if (path.includes("equip") || path.includes("machin") || textLower.includes("equipment")) return "EQUIPMENT";
-  if (path.includes("certif") || path.includes("quality") || textLower.includes("certif")) return "CERTIFICATIONS";
-  if (path.includes("project") || path.includes("portfolio") || textLower.includes("project")) return "PROJECTS";
-  if (path.includes("contact") || textLower.includes("contact")) return "CONTACT";
-  if (path.includes("location") || path.includes("plant") || textLower.includes("location")) return "LOCATION";
+  // Match whole path words, so "/contactors" (a product) is not a contact page.
+  const words = path.split(/[^a-z0-9]+/).filter(Boolean);
+  const pathHas = (...stems: string[]) => words.some((w) => stems.some((s) => w === s || w.startsWith(s)));
+  const pathHasExact = (...terms: string[]) => words.some((w) => terms.includes(w));
+  const textHas = (rx: RegExp) => rx.test(textLower);
+
+  if (pathHas("about", "company", "who", "history") || textHas(/\babout\b/)) return "ABOUT";
+  if (pathHas("service") || textHas(/\bservices?\b/)) return "SERVICES";
+  if (pathHas("capabilit", "expertise", "specialt", "what") || textHas(/\bcapabilit/)) return "CAPABILITIES";
+  if (pathHas("product") || textHas(/\bproducts?\b/)) return "PRODUCTS";
+  if (pathHas("industr", "markets", "sectors") || textHas(/\bindustr/)) return "INDUSTRIES";
+  if (pathHas("equip", "machin", "facilit", "fleet") || textHas(/\bequipment\b/)) return "EQUIPMENT";
+  if (pathHas("certif", "quality", "accreditation") || textHas(/\bcertif/)) return "CERTIFICATIONS";
+  if (pathHas("project", "portfolio", "gallery", "work") || textHas(/\bprojects?\b/)) return "PROJECTS";
+  if (pathHasExact("contact", "contacts", "contactus", "contact-us") || pathHas("contact-us", "get-in-touch") || textHas(/\bcontact\b/)) return "CONTACT";
+  if (pathHas("location", "branch", "office") || pathHasExact("plant", "plants") || textHas(/\blocations?\b/)) return "LOCATION";
 
   return "OTHER";
 }
@@ -115,6 +138,8 @@ export function discoverHighValueLinks(
 
     const normalized = normalizeUrl(href, baseUrl);
     if (!normalized) return;
+    if (!/^https?:/i.test(normalized)) return;
+    if (/[?&]lang=fr\b/i.test(normalized)) return;
 
     if (!isSameRegistrableDomain(normalized, baseUrl)) return;
 
@@ -124,8 +149,10 @@ export function discoverHighValueLinks(
 
     const classification = classifyUrl(normalized, anchorText);
 
-    if (!discovered.has(normalized)) {
-      discovered.set(normalized, {
+    const key = dedupeKey(normalized);
+    if (key === dedupeKey(baseUrl)) return;
+    if (!discovered.has(key)) {
+      discovered.set(key, {
         url: normalized,
         classification,
         anchorText,
@@ -152,7 +179,10 @@ export function discoverHighValueLinks(
   const sortedLinks = Array.from(discovered.values()).sort((a, b) => {
     const idxA = priorityOrder.indexOf(a.classification);
     const idxB = priorityOrder.indexOf(b.classification);
-    return idxA - idxB;
+    if (idxA !== idxB) return idxA - idxB;
+    // Within a class, shallow pages (/services) beat deep ones (/services/x/y/z).
+    const depth = (u: string) => new URL(u).pathname.split("/").filter(Boolean).length;
+    return depth(a.url) - depth(b.url);
   });
 
   return sortedLinks.slice(0, maxPages);

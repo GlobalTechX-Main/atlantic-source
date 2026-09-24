@@ -61,6 +61,11 @@ export function cleanExtractedPhone(raw: string): { rawValue: string; normalized
     return null;
   }
 
+  // North American numbers: area code and exchange never start with 0 or 1.
+  if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(norm)) {
+    return null;
+  }
+
   return { rawValue: raw.trim(), normalizedValue: norm };
 }
 
@@ -175,8 +180,10 @@ export class ContactExtractor implements BaseExtractor {
       }
     }
 
+    const pageText = (input.fullText ?? input.visibleText).replace(/\n/g, " ");
+
     // 4. Extract emails from visible text (VISIBLE_TEXT)
-    const textMatches = input.visibleText.match(EMAIL_REGEX) || [];
+    const textMatches = pageText.match(EMAIL_REGEX) || [];
     for (const rawEmail of textMatches) {
       const lower = rawEmail.toLowerCase().trim();
       if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".svg") || lower.endsWith(".js")) {
@@ -187,10 +194,10 @@ export class ContactExtractor implements BaseExtractor {
       if (cleaned && !seenEmails.has(cleaned)) {
         seenEmails.add(cleaned);
 
-        const idx = input.visibleText.indexOf(rawEmail);
+        const idx = pageText.indexOf(rawEmail);
         const snippetStart = Math.max(0, idx - 40);
-        const snippetEnd = Math.min(input.visibleText.length, idx + rawEmail.length + 40);
-        const snippet = input.visibleText.substring(snippetStart, snippetEnd).trim();
+        const snippetEnd = Math.min(pageText.length, idx + rawEmail.length + 40);
+        const snippet = pageText.substring(snippetStart, snippetEnd).trim();
 
         claims.push({
           claimType: "CONTACT",
@@ -205,11 +212,11 @@ export class ContactExtractor implements BaseExtractor {
     }
 
     // 5. Extract phone numbers from visible text (VISIBLE_TEXT)
-    const phoneMatches = input.visibleText.match(PHONE_REGEX) || [];
+    const phoneMatches = pageText.match(PHONE_REGEX) || [];
     for (const phoneStr of phoneMatches) {
-      const idx = input.visibleText.indexOf(phoneStr);
-      const precedingText = input.visibleText.substring(Math.max(0, idx - 30), idx);
-      const surroundingSnippet = input.visibleText.substring(Math.max(0, idx - 40), Math.min(input.visibleText.length, idx + phoneStr.length + 40));
+      const idx = pageText.indexOf(phoneStr);
+      const precedingText = pageText.substring(Math.max(0, idx - 30), idx);
+      const surroundingSnippet = pageText.substring(Math.max(0, idx - 40), Math.min(pageText.length, idx + phoneStr.length + 40));
 
       // Check if phone number is explicitly labeled as Fax (and not overridden by Phone label)
       const lastFaxIdx = precedingText.toLowerCase().lastIndexOf("fax");

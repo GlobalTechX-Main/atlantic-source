@@ -5,6 +5,29 @@ import { logger } from "@/lib/logger";
 import { consolidateExtractedClaims, CanonicalClaimFact } from "./consolidation";
 import { applySupplierRfqContactSelection } from "@/lib/contacts/selection";
 
+/**
+ * Low-risk facts are only published without a person when AUTO_PUBLISH_LOW_RISK_FACTS=true.
+ * By default every extracted fact waits in the admin review queue with a recommendation.
+ */
+export function autoPublishEnabled(): boolean {
+  return (process.env.AUTO_PUBLISH_LOW_RISK_FACTS || "").toLowerCase() === "true";
+}
+
+/** A window of page text around the claimed value (or its evidence quote). */
+export function buildClaimContext(pageText: string | null | undefined, rawValue: string, evidenceText?: string | null, radius = 200): string | null {
+  if (!pageText) return null;
+  const flat = pageText.replace(/\s+/g, " ");
+  const quoted = evidenceText?.match(/"([^"]{12,})"/)?.[1];
+  const probes = [rawValue, quoted?.slice(0, 60)].filter((p): p is string => Boolean(p && p.trim()));
+  for (const probe of probes) {
+    const idx = flat.toLowerCase().indexOf(probe.toLowerCase().replace(/\s+/g, " "));
+    if (idx !== -1) {
+      return flat.slice(Math.max(0, idx - radius), Math.min(flat.length, idx + probe.length + radius));
+    }
+  }
+  return null;
+}
+
 export interface BatchValidationStats {
   totalProcessed: number;
   uniqueCanonicalFacts: number;
@@ -79,9 +102,8 @@ export async function validateAndProcessSupplierClaims(
       fact.supportingClaims.find((c) => c.sourceDocument?.pageType === "SERVICES" || c.sourceDocument?.pageType === "CAPABILITIES")
         ?.sourceDocument?.pageType || firstClaim.sourceDocument?.pageType;
 
-    const surroundingContext = firstClaim.sourceDocument?.extractedText
-      ? firstClaim.sourceDocument.extractedText.slice(0, 500)
-      : null;
+    // Judge the fact by the text around it, not by the start of the page (usually the menu).
+    const surroundingContext = buildClaimContext(firstClaim.sourceDocument?.extractedText, firstClaim.rawValue, firstClaim.evidenceText);
 
     let validationResult;
     if (fact.hasContradictions) {
@@ -147,9 +169,14 @@ export async function validateAndProcessSupplierClaims(
       if (targetState === "HUMAN_APPROVED" || targetState === "VERIFIED") {
         stats.publishedCount++;
       }
-    } else if (validationResult.decision === "APPROVE" && validationResult.risk === "LOW") {
+    } else if (validationResult.decision === "APPROVE" && validationResult.risk === "LOW" && autoPublishEnabled()) {
       targetState = "AUTO_APPROVED";
       stats.autoApproved++;
+    } else if (validationResult.decision === "APPROVE" && validationResult.risk === "LOW") {
+      // Human review first (AGENTS.md rule 4): keep the validator's verdict as a recommendation.
+      targetState = "HUMAN_REVIEW";
+      reasonToApply = `Recommended: approve. ${validationResult.reason}`;
+      stats.needsHumanReview++;
     } else if (validationResult.decision === "REJECT" && validationResult.risk === "LOW") {
       targetState = "AUTO_REJECTED";
       stats.autoRejected++;

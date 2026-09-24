@@ -118,5 +118,18 @@ export const TAXONOMY_ALIASES: TaxonomyAlias[] = [
 
   // NDT
   { alias: "Non-Destructive Testing", capabilityId: "cap_ndt", normalizedAlias: "non-destructive testing" },
-  { alias: "Environmental Engineering", capabilityId: "cap_ndt", normalizedAlias: "environmental engineering" },
+  { alias: "NDT Inspection", capabilityId: "cap_ndt", normalizedAlias: "ndt inspection" },
+  { alias: "Ultrasonic Testing", capabilityId: "cap_ndt", normalizedAlias: "ultrasonic testing" },
+
+  // Additional common wording found on Atlantic supplier sites
+  { alias: "Mechanical Contractor", capabilityId: "cap_hvac", normalizedAlias: "mechanical contractor" },
+  { alias: "Mechanical Contracting", capabilityId: "cap_hvac", normalizedAlias: "mechanical contracting" },
+  { alias: "Powder Coating", capabilityId: "cap_coat", normalizedAlias: "powder coating" },
+  { alias: "Sandblasting", capabilityId: "cap_coat", normalizedAlias: "sandblasting" },
 ];
+
+/**
+ * Aliases that were wrong and must never be used, even if they are still stored in the
+ * database from an older seed. "Environmental Engineering" was mapped to NDT inspection.
+ */
+export const RETIRED_ALIASES = new Set<string>(["environmental engineering"]);

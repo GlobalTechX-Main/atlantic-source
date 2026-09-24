@@ -62,8 +62,10 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
   }
 
   // 2. High-Risk Rule: Negated Capability
+  // Only the claim's own evidence sentence counts: a negation elsewhere nearby
+  // ("not available on weekends") says nothing about this fact.
   for (const pattern of NEGATION_PATTERNS) {
-    if (pattern.test(combinedText)) {
+    if (pattern.test(input.evidenceText)) {
       return {
         decision: "REJECT",
         confidence: 0.95,
@@ -164,8 +166,11 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
         "corporateresponsibility", "webmaster", "postmaster"
       ];
 
+      // Compare whole parts of the address ("hr.team" -> ["hr", "team"]), never substrings:
+      // "pr" must not match "procurement" and "hr" must not match "chris".
+      const localTokens = localPart.split(/[._+-]+/).filter(Boolean);
       const isNonRFQ = NON_RFQ_KEYWORDS.some((kw) =>
-        localPart === kw || localPart.startsWith(`${kw}.`) || localPart.startsWith(`${kw}_`) || localPart.endsWith(`.${kw}`) || localPart.includes(kw)
+        localPart === kw || localTokens.includes(kw) || (kw.length >= 5 && localTokens.some((t) => t.startsWith(kw)))
       );
 
       if (isNonRFQ) {
@@ -280,14 +285,10 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
     // 6f. Usable Supplier Phone Numbers
     const phoneDigits = input.rawValue.replace(/\D/g, "");
     if (phoneDigits.length >= 10 && phoneDigits.length <= 11) {
-      const lowerContext = `${input.evidenceText} ${input.surroundingContext || ""}`.toLowerCase();
-      const isNonRFQPhone =
-        lowerContext.includes("payroll") ||
-        lowerContext.includes("retirement") ||
-        lowerContext.includes("helpdesk") ||
-        lowerContext.includes("hr") ||
-        lowerContext.includes("investor") ||
-        lowerContext.includes("media");
+      // Whole words only: "hr" must not match "three" or "through", "media" not "immediately".
+      const isNonRFQPhone = /\b(?:payroll|retirement|helpdesk|help\s+desk|hr|human\s+resources|investors?|investor\s+relations|media\s+(?:inquiries|relations|contact))\b/i.test(
+        input.evidenceText
+      );
 
       if (isNonRFQPhone) {
         return {
@@ -316,9 +317,24 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
   // 7. Deterministic Auto-Approval: Exact Taxonomy Capability Match
   if (
     (input.claimType === "CAPABILITY" || input.claimType === "INDUSTRY" || input.claimType === "EQUIPMENT") &&
-    (input.extractionMethod === "TAXONOMY_EXACT" ||
-      input.extractionMethod === "TAXONOMY_ALIAS" ||
-      input.extractionConfidence >= 0.8)
+    input.extractionConfidence < 0.8
+  ) {
+    // Extractors lower confidence when a term is only sold, only describes customers,
+    // is part of a job title or sits in a project description.
+    return {
+      decision: "HUMAN_REVIEW",
+      confidence: input.extractionConfidence,
+      risk: "MEDIUM",
+      reason: "Term found in a weaker context (resale, customers served, job title or project description); needs a person to confirm",
+      evidenceSupported: true,
+      validatorVersion: "1.1.0",
+      validatorActor: "RULE_ENGINE:WEAK_CONTEXT_MATCH",
+    };
+  }
+
+  if (
+    (input.claimType === "CAPABILITY" || input.claimType === "INDUSTRY" || input.claimType === "EQUIPMENT") &&
+    (input.extractionMethod === "TAXONOMY_EXACT" || input.extractionMethod === "TAXONOMY_ALIAS")
   ) {
     return {
       decision: "APPROVE",
@@ -345,6 +361,18 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
         evidenceSupported: true,
         validatorVersion: "1.0.0",
         validatorActor: "RULE_ENGINE:EXCLUDE_PROJECT_LOCATION",
+      };
+    }
+
+    if (combinedText.includes("Role: OUT_OF_REGION")) {
+      return {
+        decision: "HUMAN_REVIEW",
+        confidence: 0.6,
+        risk: "MEDIUM",
+        reason: "Address is outside Atlantic Canada; confirm the supplier really operates in the region",
+        evidenceSupported: true,
+        validatorVersion: "1.1.0",
+        validatorActor: "RULE_ENGINE:OUT_OF_REGION_LOCATION",
       };
     }
 
@@ -385,6 +413,9 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
       lowerEv.includes("coverage") ||
       lowerEv.includes("operations in") ||
       lowerEv.includes("services across") ||
+      lowerEv.includes("across") ||
+      lowerEv.includes("throughout") ||
+      lowerEv.includes("servicing") ||
       lowerEv.includes("located in") ||
       lowerEv.includes("serving atlantic canada") ||
       lowerEv.includes("serving new brunswick");

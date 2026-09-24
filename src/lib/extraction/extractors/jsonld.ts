@@ -64,11 +64,17 @@ export class JsonLdExtractor implements BaseExtractor {
                 .join(", ");
 
               if (formattedAddr) {
+                // Same postal-code key as the text address extractor, so both merge into one fact.
+                const postalRaw = typeof addr.postalCode === "string" ? addr.postalCode.replace(/[\s-]+/g, "").toUpperCase() : "";
+                const postal = /^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(postalRaw) ? `${postalRaw.slice(0, 3)} ${postalRaw.slice(3)}` : undefined;
+                const outOfRegion = postal !== undefined && !/^[ABCE]/.test(postal);
+                const role = outOfRegion ? "OUT_OF_REGION" : "HEADQUARTERS";
                 claims.push({
                   claimType: "LOCATION",
                   rawValue: formattedAddr,
-                  evidenceText: `JSON-LD ${typeStr} address property`,
-                  evidenceLocator: "script[type='application/ld+json']",
+                  normalizedValue: postal,
+                  evidenceText: `JSON-LD ${typeStr} address property (Role: ${role})`,
+                  evidenceLocator: `location_role:${role}`,
                   extractionMethod: ExtractionMethodEnum.JSON_LD,
                   confidence: 0.95,
                 });

@@ -7,7 +7,12 @@ describe("Automated Claim Validation Service & Auto-Publishing Integration Test"
   let supplierId: string;
   let docId: string;
 
+  const previousAutoPublish = process.env.AUTO_PUBLISH_LOW_RISK_FACTS;
+
   beforeAll(async () => {
+    // This suite covers the opt-in auto-publishing mode (off by default).
+    process.env.AUTO_PUBLISH_LOW_RISK_FACTS = "true";
+
     // Seed test supplier
     const supplier = await db.supplierCompany.create({
       data: {
@@ -95,6 +100,8 @@ describe("Automated Claim Validation Service & Auto-Publishing Integration Test"
   });
 
   afterAll(async () => {
+    if (previousAutoPublish === undefined) delete process.env.AUTO_PUBLISH_LOW_RISK_FACTS;
+    else process.env.AUTO_PUBLISH_LOW_RISK_FACTS = previousAutoPublish;
     if (supplierId) {
       await db.supplierCompany.delete({ where: { id: supplierId } }).catch(() => {});
     }

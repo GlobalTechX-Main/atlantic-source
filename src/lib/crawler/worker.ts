@@ -1,8 +1,7 @@
 import { db } from "@/lib/db";
-import { CrawlStatusEnum, SourceTypeEnum } from "@prisma/client";
+import { CrawlStatusEnum, SourceTypeEnum, VerificationStateEnum } from "@prisma/client";
 import { safeFetch } from "@/lib/crawler/fetcher";
-import { parseAndSanitizeHtml } from "@/lib/crawler/parser";
-import { discoverHighValueLinks } from "@/lib/crawler/discovery";
+import { crawlSite, toExtractorInput, withRetry, DEFAULT_MAX_SUBPAGES } from "@/lib/crawler/pipeline";
 import { ExtractionEngine } from "@/lib/extraction/engine";
 import { logger } from "@/lib/logger";
 
@@ -12,6 +11,13 @@ export interface ProcessJobResult {
   pagesFetched?: number;
   claimsGenerated?: number;
   error?: string;
+}
+
+export interface ProcessJobOptions {
+  /** Process this specific job instead of the oldest pending one. */
+  crawlRunId?: string;
+  /** How many subpages to read besides the home page. */
+  maxSubpages?: number;
 }
 
 /**
@@ -41,13 +47,50 @@ export async function recoverStaleCrawlJobs(staleThresholdMinutes = 5): Promise<
   }
 }
 
-export async function processNextCrawlJob(): Promise<ProcessJobResult> {
+/**
+ * Removes facts that the system published on its own (never reviewed by a person) so a
+ * fresh crawl replaces them instead of piling new facts on top of old mistakes.
+ * Anything a person approved or rejected is kept.
+ */
+export async function clearSystemPublishedFacts(supplierCompanyId: string): Promise<void> {
+  const systemStates = [VerificationStateEnum.AUTO_APPROVED, VerificationStateEnum.UNREVIEWED, VerificationStateEnum.PENDING];
+  await db.$transaction([
+    db.supplierCapability.deleteMany({ where: { supplierCompanyId, verificationState: { in: systemStates } } }),
+    db.supplierIndustry.deleteMany({ where: { supplierCompanyId, verificationState: { in: systemStates } } }),
+    db.supplierCertification.deleteMany({ where: { supplierCompanyId, verificationState: { in: systemStates } } }),
+    db.supplierEquipment.deleteMany({ where: { supplierCompanyId, verificationState: { in: systemStates } } }),
+    db.supplierServiceRegion.deleteMany({ where: { supplierCompanyId, verificationState: { in: systemStates } } }),
+    db.supplierLocation.deleteMany({
+      where: { supplierCompanyId, verificationState: { in: [VerificationStateEnum.AUTO_APPROVED] } },
+    }),
+    db.extractedClaim.deleteMany({
+      where: {
+        supplierCompanyId,
+        reviewedByUserId: null,
+        reviewState: { notIn: [VerificationStateEnum.HUMAN_APPROVED, VerificationStateEnum.HUMAN_REJECTED, VerificationStateEnum.VERIFIED, VerificationStateEnum.REJECTED, VerificationStateEnum.APPROVED] },
+      },
+    }),
+  ]);
+}
+
+async function markFailed(crawlRunId: string, errorSummary: string, extra: { pagesDiscovered?: number; pagesFetched?: number; pagesRejected?: number } = {}) {
+  try {
+    await db.crawlRun.update({
+      where: { id: crawlRunId },
+      data: { status: CrawlStatusEnum.FAILED, completedAt: new Date(), errorSummary, ...extra },
+    });
+  } catch {
+    // CrawlRun record may have been deleted or reset concurrently
+  }
+}
+
+export async function processNextCrawlJob(options: ProcessJobOptions = {}): Promise<ProcessJobResult> {
   // 0. Recover any stale RUNNING jobs before claiming next job
   await recoverStaleCrawlJobs(5);
 
-  // 1. Find oldest PENDING job
+  // 1. Find the requested job, or the oldest PENDING job
   const pendingJob = await db.crawlRun.findFirst({
-    where: { status: CrawlStatusEnum.PENDING },
+    where: { status: CrawlStatusEnum.PENDING, ...(options.crawlRunId ? { id: options.crawlRunId } : {}) },
     orderBy: { createdAt: "asc" },
     include: { supplierCompany: true },
   });
@@ -58,128 +101,85 @@ export async function processNextCrawlJob(): Promise<ProcessJobResult> {
 
   // 2. Atomically claim job (PENDING -> RUNNING)
   const claimResult = await db.crawlRun.updateMany({
-    where: {
-      id: pendingJob.id,
-      status: CrawlStatusEnum.PENDING,
-    },
-    data: {
-      status: CrawlStatusEnum.RUNNING,
-      startedAt: new Date(),
-      attempts: { increment: 1 },
-    },
+    where: { id: pendingJob.id, status: CrawlStatusEnum.PENDING },
+    data: { status: CrawlStatusEnum.RUNNING, startedAt: new Date(), attempts: { increment: 1 } },
   });
-
   if (claimResult.count === 0) {
     return { processed: false };
   }
 
   logger.info({ crawlRunId: pendingJob.id, seedUrl: pendingJob.seedUrl }, "Crawl job claimed by worker");
 
-  let pagesFetched = 0;
-  let claimsGenerated = 0;
-  const engine = new ExtractionEngine();
+  const supplier = pendingJob.supplierCompany;
+  const supplierDomain =
+    supplier?.normalizedDomain ||
+    (() => {
+      try {
+        return new URL(pendingJob.seedUrl).hostname.replace(/^www\./, "");
+      } catch {
+        return null;
+      }
+    })();
 
   try {
-    // 3. Fetch Seed Page safely
-    let seedHtml = "";
-    let seedUrl = pendingJob.seedUrl;
-    let seedStatusCode = 200;
+    // 3. Fetch and analyse the whole site before saving anything
+    const site = await crawlSite(
+      pendingJob.seedUrl,
+      supplier?.canonicalName || "",
+      supplierDomain,
+      // Integration tests replace safeFetch with a mock, so look it up at call time.
+      withRetry((url) => safeFetch(url), process.env.NODE_ENV === "test" ? [] : [2000, 6000]),
+      options.maxSubpages ?? DEFAULT_MAX_SUBPAGES
+    );
 
-    try {
-      const fetchResult = await safeFetch(pendingJob.seedUrl);
-      seedHtml = fetchResult.content;
-      seedUrl = fetchResult.url || pendingJob.seedUrl;
-      seedStatusCode = fetchResult.statusCode;
-    } catch (err: unknown) {
-      throw new Error(`Failed to fetch seed URL: ${err instanceof Error ? err.message : "Network error"}`);
+    const counts = {
+      pagesDiscovered: site.pagesDiscovered,
+      pagesFetched: site.pages.length,
+      pagesRejected: site.rejected.length,
+    };
+
+    if (site.seedError && site.pages.length === 0 && site.identity.status !== "BLOCKED") {
+      throw new Error(site.seedError);
     }
 
-    const seedParsed = parseAndSanitizeHtml(seedHtml, seedUrl);
-
-    // Save Seed SourceDocument
-    const seedDoc = await db.sourceDocument.create({
-      data: {
-        supplierCompanyId: pendingJob.supplierCompanyId,
-        crawlRunId: pendingJob.id,
-        sourceUrl: pendingJob.seedUrl,
-        canonicalUrl: seedParsed.canonicalUrl || pendingJob.seedUrl,
-        sourceType: SourceTypeEnum.HTML,
-        pageType: "HOME",
-        title: seedParsed.title || "Home Page",
-        httpStatus: seedStatusCode,
-        mimeType: "text/html",
-        contentHash: seedParsed.contentHash,
-        extractedText: seedParsed.visibleText,
-      },
-    });
-    pagesFetched++;
-
-    // Extract Claims from Seed Page
-    const seedClaims = await engine.runExtraction({
-      sourceDocumentId: seedDoc.id,
-      supplierCompanyId: pendingJob.supplierCompanyId,
-      sourceUrl: pendingJob.seedUrl,
-      pageTitle: seedParsed.title,
-      visibleText: seedParsed.visibleText,
-      headings: seedParsed.headings,
-      jsonLdScripts: seedParsed.jsonLdScripts,
-      mailtoLinks: seedParsed.mailtoLinks,
-      telLinks: seedParsed.telLinks,
-      canonicalUrl: seedParsed.canonicalUrl,
-    });
-
-    claimsGenerated += seedClaims.length;
-
-    // 4. Discover High-Value Same-Domain Subpages
-    const discoveredLinks = discoverHighValueLinks(seedHtml, pendingJob.seedUrl, 8);
-    const pagesDiscovered = 1 + discoveredLinks.length;
-
-    for (const link of discoveredLinks) {
-      if (link.url === pendingJob.seedUrl) continue;
-
-      try {
-        const fetchResult = await safeFetch(link.url);
-        if (!fetchResult.content) continue;
-
-        const parsed = parseAndSanitizeHtml(fetchResult.content, fetchResult.url || link.url);
-
-        const doc = await db.sourceDocument.create({
-          data: {
-            supplierCompanyId: pendingJob.supplierCompanyId,
-            crawlRunId: pendingJob.id,
-            sourceUrl: link.url,
-            canonicalUrl: parsed.canonicalUrl || link.url,
-            sourceType: SourceTypeEnum.HTML,
-            pageType: link.classification,
-            title: parsed.title || link.anchorText || link.classification,
-            httpStatus: fetchResult.statusCode || 200,
-            mimeType: "text/html",
-            contentHash: parsed.contentHash,
-            extractedText: parsed.visibleText,
-          },
-        });
-        pagesFetched++;
-
-        const extracted = await engine.runExtraction({
-          sourceDocumentId: doc.id,
-          supplierCompanyId: pendingJob.supplierCompanyId,
-          sourceUrl: link.url,
-          pageTitle: parsed.title,
-          visibleText: parsed.visibleText,
-          headings: parsed.headings,
-          jsonLdScripts: parsed.jsonLdScripts,
-          mailtoLinks: parsed.mailtoLinks,
-          telLinks: parsed.telLinks,
-          canonicalUrl: parsed.canonicalUrl,
-        });
-
-        claimsGenerated += extracted.length;
-      } catch (err) {
-        logger.warn({ err, url: link.url }, "Subpage crawl fetch failed");
+    if (site.identity.status !== "OK") {
+      // A site that no longer belongs to the supplier must not keep feeding its profile.
+      if (site.identity.status === "PARKED_OR_SPAM" || site.identity.status === "NAME_NOT_FOUND") {
+        await clearSystemPublishedFacts(pendingJob.supplierCompanyId);
       }
+      const summary = `Website check failed (${site.identity.status}): ${site.identity.reason}`;
+      await markFailed(pendingJob.id, summary, counts);
+      logger.warn({ crawlRunId: pendingJob.id, identity: site.identity }, "Crawl stopped by website identity check");
+      return { processed: true, crawlRunId: pendingJob.id, pagesFetched: site.pages.length, error: summary };
     }
 
-    // 5. Automated Claim Validation Layer
+    // 4. Replace facts the system published on its own last time
+    await clearSystemPublishedFacts(pendingJob.supplierCompanyId);
+
+    // 5. Save pages and extract facts
+    const engine = new ExtractionEngine();
+    let claimsGenerated = 0;
+    for (const page of site.pages) {
+      const doc = await db.sourceDocument.create({
+        data: {
+          supplierCompanyId: pendingJob.supplierCompanyId,
+          crawlRunId: pendingJob.id,
+          sourceUrl: page.requestedUrl,
+          canonicalUrl: page.parsed.canonicalUrl || page.finalUrl,
+          sourceType: SourceTypeEnum.HTML,
+          pageType: page.classification,
+          title: page.parsed.title || page.classification,
+          httpStatus: page.statusCode,
+          mimeType: "text/html",
+          contentHash: page.parsed.contentHash,
+          extractedText: page.parsed.fullText || page.parsed.visibleText,
+        },
+      });
+      const extracted = await engine.runExtraction(toExtractorInput(page, doc.id, pendingJob.supplierCompanyId, site.isRetail));
+      claimsGenerated += extracted.length;
+    }
+
+    // 6. Automated claim validation layer
     try {
       const { validateAndProcessSupplierClaims } = await import("@/lib/validation/service");
       await validateAndProcessSupplierClaims(pendingJob.supplierCompanyId);
@@ -187,49 +187,23 @@ export async function processNextCrawlJob(): Promise<ProcessJobResult> {
       logger.warn({ valErr, supplierCompanyId: pendingJob.supplierCompanyId }, "Automated claim validation layer encountered error");
     }
 
-    // 6. Update CrawlRun to COMPLETED
+    // 7. Done
     await db.crawlRun.update({
       where: { id: pendingJob.id },
       data: {
         status: CrawlStatusEnum.COMPLETED,
         completedAt: new Date(),
-        pagesDiscovered,
-        pagesFetched,
+        ...counts,
+        errorSummary: site.rejected.length > 0 ? `Skipped ${site.rejected.length} page(s): ${site.rejected.slice(0, 5).map((r) => `${r.url} (${r.reason})`).join("; ")}` : null,
       },
     });
 
-    logger.info(
-      { crawlRunId: pendingJob.id, pagesFetched, claimsGenerated },
-      "Crawl job completed successfully"
-    );
-
-    return {
-      processed: true,
-      crawlRunId: pendingJob.id,
-      pagesFetched,
-      claimsGenerated,
-    };
+    logger.info({ crawlRunId: pendingJob.id, pagesFetched: site.pages.length, claimsGenerated }, "Crawl job completed successfully");
+    return { processed: true, crawlRunId: pendingJob.id, pagesFetched: site.pages.length, claimsGenerated };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : "Crawl processing error";
     logger.error({ err, crawlRunId: pendingJob.id }, "Crawl job processing failed");
-
-    try {
-      await db.crawlRun.update({
-        where: { id: pendingJob.id },
-        data: {
-          status: CrawlStatusEnum.FAILED,
-          completedAt: new Date(),
-          errorSummary: errorMsg,
-        },
-      });
-    } catch {
-      // CrawlRun record may have been deleted or reset concurrently
-    }
-
-    return {
-      processed: true,
-      crawlRunId: pendingJob.id,
-      error: errorMsg,
-    };
+    await markFailed(pendingJob.id, errorMsg);
+    return { processed: true, crawlRunId: pendingJob.id, error: errorMsg };
   }
 }

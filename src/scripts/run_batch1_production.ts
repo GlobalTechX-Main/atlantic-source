@@ -123,7 +123,7 @@ export async function runBatch1() {
     await db.sourceDocument.deleteMany({ where: { supplierCompanyId: supp.id } });
     await db.crawlRun.deleteMany({ where: { supplierCompanyId: supp.id } });
 
-    await db.crawlRun.create({
+    const run = await db.crawlRun.create({
       data: {
         supplierCompanyId: supp.id,
         seedUrl: cand.websiteUrl,
@@ -135,7 +135,7 @@ export async function runBatch1() {
     });
 
     try {
-      const res = await processNextCrawlJob();
+      const res = await processNextCrawlJob({ crawlRunId: run.id });
       console.log(`   Finish: ${res.processed ? 'SUCCESS' : 'SKIPPED'}, Pages Fetched: ${res.pagesFetched || 0}, Claims: ${res.claimsGenerated || 0}, Error: ${res.error || 'none'}`);
     } catch (err: unknown) {
       console.log(`   Error processing supplier ${cand.companyName}: ${err instanceof Error ? err.message : String(err)}`);

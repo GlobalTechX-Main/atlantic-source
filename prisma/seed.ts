@@ -8,7 +8,7 @@ import {
   VerificationStateEnum,
   ContactTypeEnum,
 } from "@prisma/client";
-import { TAXONOMY_CAPABILITIES, TAXONOMY_ALIASES } from "../src/lib/taxonomy/capabilities";
+import { TAXONOMY_CAPABILITIES, TAXONOMY_ALIASES, RETIRED_ALIASES } from "../src/lib/taxonomy/capabilities";
 
 const db = new PrismaClient();
 
@@ -123,6 +123,11 @@ async function main() {
       },
     });
   }
+
+  // Remove aliases that were found to map words to the wrong capability
+  await db.capabilityAlias.deleteMany({
+    where: { normalizedAlias: { in: Array.from(RETIRED_ALIASES) } },
+  });
 
   const structCap = await db.capability.findUnique({ where: { slug: "structural-steel-fabrication" } });
 

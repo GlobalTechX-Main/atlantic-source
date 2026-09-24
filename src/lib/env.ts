@@ -21,6 +21,8 @@ const envSchema = z.object({
   SMOKE_TEST_SUPPLIER_EMAIL_1: z.string().email().optional(),
   SMOKE_TEST_SUPPLIER_EMAIL_2: z.string().email().optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  // "true" lets low-risk crawled facts publish without an admin. Off by default (AGENTS.md rule 4).
+  AUTO_PUBLISH_LOW_RISK_FACTS: z.enum(["true", "false"]).default("false"),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -41,6 +43,7 @@ function parseEnv(): Env {
         EMAIL_FROM: "noreply@atlanticsource.ca",
         EMAIL_PROVIDER: "development",
         LOG_LEVEL: "silent",
+        AUTO_PUBLISH_LOW_RISK_FACTS: "false",
       };
     }
     throw new Error("Invalid environment configuration");

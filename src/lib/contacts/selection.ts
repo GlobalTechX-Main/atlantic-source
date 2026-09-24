@@ -2,6 +2,10 @@ import { ContactTypeEnum, ProvenanceTypeEnum, VerificationStateEnum } from "@pri
 import { db } from "@/lib/db";
 import { isUsableRfqEmail, isUsableRfqPhone } from "./usability";
 
+/** NB 506/428, NS and PEI 902/782, NL 709/879. */
+const ATLANTIC_AREA_CODES = new Set(["506", "428", "902", "782", "709", "879"]);
+const TOLL_FREE_AREA_CODES = new Set(["800", "833", "844", "855", "866", "877", "888"]);
+
 export interface RankedContactCandidate {
   claimId?: string;
   rawValue: string;
@@ -19,6 +23,8 @@ export interface SupplierRfqSelectionResult {
   backups: RankedContactCandidate[];
   allSelected: RankedContactCandidate[];
   rejectedClaimIds: string[];
+  /** Usable contacts that simply ranked below the chosen three. */
+  demotedClaimIds: string[];
   ambiguousClaimIds: string[];
 }
 
@@ -58,7 +64,16 @@ export function scoreContactCandidate(
       return { score: 0, contactType: ContactTypeEnum.GENERAL, reason: "Phone number associated with HR/payroll/media", isExcluded: true };
     }
 
-    return { score: 400, contactType: ContactTypeEnum.GENERAL, reason: "Usable business phone number", isExcluded: false };
+    // Prefer numbers people in Atlantic Canada would actually call about a local job.
+    const digits10 = cleanDigits.length === 11 && cleanDigits.startsWith("1") ? cleanDigits.slice(1) : cleanDigits;
+    const areaCode = digits10.slice(0, 3);
+    if (ATLANTIC_AREA_CODES.has(areaCode)) {
+      return { score: 450, contactType: ContactTypeEnum.GENERAL, reason: "Atlantic Canada business phone number", isExcluded: false };
+    }
+    if (TOLL_FREE_AREA_CODES.has(areaCode)) {
+      return { score: 420, contactType: ContactTypeEnum.GENERAL, reason: "Toll-free business phone number", isExcluded: false };
+    }
+    return { score: 200, contactType: ContactTypeEnum.GENERAL, reason: "Business phone number outside Atlantic Canada", isExcluded: false };
   }
 
   // B. Email address handling
@@ -177,6 +192,7 @@ export function selectRfqContactsFromClaims(
 ): SupplierRfqSelectionResult {
   const rankedCandidates: RankedContactCandidate[] = [];
   const rejectedClaimIds: string[] = [];
+  const demotedClaimIds: string[] = [];
   const ambiguousClaimIds: string[] = [];
 
   const seenValues = new Set<string>();
@@ -192,7 +208,9 @@ export function selectRfqContactsFromClaims(
       continue;
     }
 
-    const normKey = val.toLowerCase();
+    // "+1 506-633-7740" and "5066337740" are the same number.
+    const digitsOnly = val.replace(/\D/g, "");
+    const normKey = !val.includes("@") && digitsOnly.length >= 10 ? digitsOnly.slice(-10) : val.toLowerCase();
     if (seenValues.has(normKey)) {
       // Duplicate claim
       rejectedClaimIds.push(c.id);
@@ -239,7 +257,7 @@ export function selectRfqContactsFromClaims(
   for (let i = 3; i < rankedCandidates.length; i++) {
     const candidate = rankedCandidates[i];
     if (candidate && candidate.claimId) {
-      rejectedClaimIds.push(candidate.claimId);
+      demotedClaimIds.push(candidate.claimId);
     }
   }
 
@@ -248,6 +266,7 @@ export function selectRfqContactsFromClaims(
     backups,
     allSelected,
     rejectedClaimIds,
+    demotedClaimIds,
     ambiguousClaimIds,
   };
 }
@@ -333,7 +352,23 @@ export async function applySupplierRfqContactSelection(supplierCompanyId: string
         reviewState: "AUTO_REJECTED",
         validationDecision: "REJECT",
         validationRisk: "LOW",
-        validationReason: "Excluded non-RFQ contact or demoted lower-priority candidate",
+        validationReason: "Excluded: not a usable RFQ contact (department, domain or format)",
+        validationActor: "RULE_ENGINE:RFQ_CONTACT_SELECTION",
+      },
+    });
+  }
+
+  if (selection.demotedClaimIds.length > 0) {
+    await db.extractedClaim.updateMany({
+      where: {
+        id: { in: selection.demotedClaimIds },
+        reviewedByUserId: null,
+      },
+      data: {
+        reviewState: "AUTO_REJECTED",
+        validationDecision: "REJECT",
+        validationRisk: "LOW",
+        validationReason: "Valid contact, but ranked below the three chosen RFQ contacts",
         validationActor: "RULE_ENGINE:RFQ_CONTACT_SELECTION",
       },
     });
