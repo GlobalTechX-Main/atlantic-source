@@ -63,7 +63,8 @@ export default async function SuppliersDirectoryPage({ searchParams }: Suppliers
     : [];
 
   const certStrict = params.certStrict || "VERIFIED";
-  const pageNum = parseInt(params.page || "1", 10);
+  const parsedPage = parseInt(params.page || "1", 10);
+  const pageNum = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
 
   const hasStructuredCriteria = reqCaps.length > 0 || reqCerts.length > 0 || city.length > 0;
 
@@ -87,8 +88,25 @@ export default async function SuppliersDirectoryPage({ searchParams }: Suppliers
         }
       : undefined,
     page: pageNum,
-    pageSize: 10,
+    pageSize: 20,
   });
+
+  /** Link to another results page, keeping every current filter. */
+  const pageHref = (target: number): string => {
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (key === "page" || value === undefined) continue;
+      for (const v of Array.isArray(value) ? value : [value]) {
+        if (v) qs.append(key, v);
+      }
+    }
+    if (target > 1) qs.set("page", String(target));
+    const s = qs.toString();
+    return s ? `/suppliers?${s}` : "/suppliers";
+  };
+  const { totalPages, totalCount } = searchOutput;
+  const firstShown = totalCount === 0 ? 0 : (searchOutput.page - 1) * searchOutput.pageSize + 1;
+  const lastShown = Math.min(totalCount, searchOutput.page * searchOutput.pageSize);
 
   const availableCapabilities = [
     { name: "Structural Steel Fabrication", slug: "structural-steel-fabrication" },
@@ -441,6 +459,41 @@ export default async function SuppliersDirectoryPage({ searchParams }: Suppliers
                 </div>
               ))}
             </div>
+          )}
+
+          {totalPages > 1 && (
+            <nav aria-label="Pagination" className="flex flex-wrap items-center justify-between gap-3 text-xs">
+              <span className="text-slate-500">
+                Showing {firstShown}–{lastShown} of {totalCount}
+              </span>
+              <div className="flex flex-wrap items-center gap-1">
+                {searchOutput.page > 1 ? (
+                  <Link href={pageHref(searchOutput.page - 1)} className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
+                    ← Previous
+                  </Link>
+                ) : (
+                  <span className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-300">← Previous</span>
+                )}
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) =>
+                  n === searchOutput.page ? (
+                    <span key={n} aria-current="page" className="px-3 py-1.5 rounded-lg bg-atlantic-600 text-white font-bold">
+                      {n}
+                    </span>
+                  ) : (
+                    <Link key={n} href={pageHref(n)} className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
+                      {n}
+                    </Link>
+                  )
+                )}
+                {searchOutput.page < totalPages ? (
+                  <Link href={pageHref(searchOutput.page + 1)} className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
+                    Next →
+                  </Link>
+                ) : (
+                  <span className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-300">Next →</span>
+                )}
+              </div>
+            </nav>
           )}
         </main>
       </div>

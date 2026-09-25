@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { metroTowns } from "@/lib/locations/address";
 import { ProfileStatusEnum, ClaimStatusEnum, VerificationStatusEnum, Prisma } from "@prisma/client";
 import { calculateContactConfidence, ContactConfidenceResult } from "../contacts/confidence";
 import {
@@ -203,11 +204,16 @@ export async function searchSuppliers(filters: SearchQueryFilters): Promise<Sear
     if (filters.city || filters.province) {
       whereClause.locations = {
         some: {
-          ...(filters.city ? { city: { equals: filters.city, mode: "insensitive" } } : {}),
+          // "Moncton" also finds Dieppe, Riverview etc. (see METRO_AREAS)
+          ...(filters.city
+            ? { OR: metroTowns(filters.city).map((town) => ({ city: { equals: town, mode: "insensitive" as const } })) }
+            : {}),
           ...(filters.province ? { province: { equals: filters.province, mode: "insensitive" } } : {}),
         },
       };
     }
+
+    const cityTowns = filters.city ? metroTowns(filters.city).map((t) => t.toLowerCase()) : [];
 
     const [totalCount, dbRecords] = await Promise.all([
       db.supplierCompany.count({ where: whereClause }),
@@ -216,7 +222,8 @@ export async function searchSuppliers(filters: SearchQueryFilters): Promise<Sear
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          locations: true,
+          // Main office first, then in the order they were found.
+          locations: { orderBy: [{ locationType: "asc" }, { createdAt: "asc" }] },
           capabilities: {
             where: { published: true },
             include: { capability: true },
@@ -262,7 +269,10 @@ export async function searchSuppliers(filters: SearchQueryFilters): Promise<Sear
         profileStatus: record.profileStatus,
         publishedAt: record.publishedAt,
         lastReviewedAt: record.lastReviewedAt,
-        locations: record.locations.map((l) => ({
+        // When searching by city, show the location in that city first on the card.
+        locations: [...record.locations]
+          .sort((a, b) => Number(cityTowns.includes(b.city.toLowerCase())) - Number(cityTowns.includes(a.city.toLowerCase())))
+          .map((l) => ({
           id: l.id,
           city: l.city,
           province: l.province,
@@ -357,8 +367,11 @@ export async function searchSuppliers(filters: SearchQueryFilters): Promise<Sear
       totalPages: Math.ceil(totalCount / pageSize),
       hasActiveStructuredMatching,
     };
-  } catch {
-    return getMockSearchResults(filters, page, pageSize, hasActiveStructuredMatching);
+  } catch (err) {
+    // Never show demo suppliers in place of real ones: if the database is down, say so.
+    throw new Error(
+      `Supplier search could not reach the database. Is Docker (Postgres) running? ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 }
 
@@ -581,8 +594,8 @@ function getMockSearchResults(
   }
 
   if (filters.city) {
-    const cityLower = filters.city.toLowerCase();
-    filtered = filtered.filter((s) => s.locations.some((l) => l.city.toLowerCase() === cityLower));
+    const towns = metroTowns(filters.city).map((t) => t.toLowerCase());
+    filtered = filtered.filter((s) => s.locations.some((l) => towns.includes(l.city.toLowerCase())));
   }
 
   if (filters.capabilities && filters.capabilities.length > 0) {

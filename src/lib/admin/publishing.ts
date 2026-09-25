@@ -3,6 +3,7 @@ import { VerificationStateEnum, ProvenanceTypeEnum, ProfileStatusEnum } from "@p
 import { logAdminAction } from "./audit";
 import { TAXONOMY_ALIASES, TAXONOMY_CAPABILITIES } from "@/lib/taxonomy/capabilities";
 import { applySupplierRfqContactSelection } from "@/lib/contacts/selection";
+import { publishLocationClaim } from "@/lib/locations/publish";
 
 export interface ClaimApprovalOverrides {
   claimType?: string;
@@ -134,66 +135,13 @@ export async function approveClaim(
     } else if (claimType === "CONTACT" || claimType === "CONTACT_EMAIL" || claimType === "CONTACT_PHONE") {
       await applySupplierRfqContactSelection(supplierCompanyId);
     } else if (claimType === "LOCATION") {
-      const addressText = claim?.rawValue || normalizedValue || "";
-      const postalMatch = addressText.match(/[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d/);
-      const postalCode = postalMatch ? postalMatch[0].replace(/\s+/g, "").toUpperCase() : null;
-      const formattedPostal = postalCode ? `${postalCode.slice(0, 3)} ${postalCode.slice(3)}` : null;
-
-      const lowerText = addressText.toLowerCase();
-      const NB_CITIES = [
-        "saint john",
-        "fredericton",
-        "moncton",
-        "dieppe",
-        "riverview",
-        "quispamsis",
-        "rothesay",
-        "miramichi",
-        "edmundston",
-        "bathurst",
-        "halifax",
-        "dartmouth",
-        "sydney",
-        "truro",
-        "charlottetown",
-        "st. john's",
-      ];
-      const matchedCity = NB_CITIES.find((c) => lowerText.includes(c));
-      const city = matchedCity
-        ? matchedCity
-            .split(" ")
-            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-            .join(" ")
-        : null;
-
-      const existingLoc = await db.supplierLocation.findFirst({
-        where: { supplierCompanyId },
-      });
-
-      if (existingLoc) {
-        await db.supplierLocation.update({
-          where: { id: existingLoc.id },
-          data: {
-            addressLine1: addressText.length < 150 ? addressText : existingLoc.addressLine1,
-            city: city || existingLoc.city,
-            postalCode: formattedPostal || existingLoc.postalCode,
-            verificationState: targetVerificationState,
-          },
-        });
-      } else {
-        await db.supplierLocation.create({
-          data: {
-            supplierCompanyId,
-            addressLine1: addressText || "Primary Location",
-            city: city || "Moncton",
-            province: "NB",
-            country: "Canada",
-            postalCode: formattedPostal,
-            provenance: ProvenanceTypeEnum.PUBLICLY_DISCOVERED,
-            verificationState: targetVerificationState,
-          },
-        });
-      }
+      // Each approved address becomes its own location row (see publishLocationClaim).
+      await publishLocationClaim(
+        supplierCompanyId,
+        claim?.rawValue || normalizedValue || "",
+        claim?.evidenceText,
+        targetVerificationState
+      );
     } else if (claimType === "CERTIFICATION") {
       const valSlug = normalizedValue.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       const cert = await db.certification.findFirst({
