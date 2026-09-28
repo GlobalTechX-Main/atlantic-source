@@ -13,6 +13,9 @@ import { SocialLinkExtractor } from "./extractors/social";
 import { VerificationStateEnum } from "@prisma/client";
 
 export class ExtractionEngine {
+  /** One engine is used per crawl; listed services already saved from an earlier page are skipped. */
+  private servicesSeenThisCrawl = new Set<string>();
+
   private extractors = [
     new JsonLdExtractor(),
     new ContactExtractor(),
@@ -44,10 +47,14 @@ export class ExtractionEngine {
 
     for (const cand of allCandidates) {
       const key = `${cand.claimType}:${cand.rawValue.toLowerCase().trim()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueCandidates.push(cand);
+      if (seen.has(key)) continue;
+      // A service menu repeats on every page: keep each listed service once per crawl.
+      if (cand.claimType === "SERVICE_LISTED") {
+        if (this.servicesSeenThisCrawl.has(key)) continue;
+        this.servicesSeenThisCrawl.add(key);
       }
+      seen.add(key);
+      uniqueCandidates.push(cand);
     }
 
     // Persist ExtractedClaim records to Database if not in offline test mode

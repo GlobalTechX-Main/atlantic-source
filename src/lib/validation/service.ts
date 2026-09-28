@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { VerificationStateEnum } from "@prisma/client";
 import { defaultClaimValidator } from "./claimValidator";
 import { approveClaim } from "@/lib/admin/publishing";
 import { logger } from "@/lib/logger";
@@ -61,17 +62,32 @@ export async function validateAndProcessSupplierClaims(
     collapsedDuplicates: 0,
   };
 
-  const unreviewedClaims = await db.extractedClaim.findMany({
+  // Load every claim in pages of 500. Big sites list their services and social links in the
+  // menu on every page, so one crawl can produce well over 500 claims; a single capped read
+  // used to leave the rest unreviewed (and never shown on the profile).
+  const claimQuery = {
     where: {
       supplierCompanyId,
-      ...(reprocessAll ? { reviewedByUserId: null } : { reviewState: "UNREVIEWED" }),
+      ...(reprocessAll ? { reviewedByUserId: null } : { reviewState: VerificationStateEnum.UNREVIEWED }),
     },
     include: {
       supplierCompany: { select: { canonicalName: true, normalizedDomain: true } },
       sourceDocument: { select: { sourceUrl: true, pageType: true, extractedText: true } },
     },
-    take: 500, // Bounded batch limit
-  });
+    orderBy: { id: "asc" as const },
+  };
+  type ClaimRow = Awaited<ReturnType<typeof db.extractedClaim.findMany<typeof claimQuery>>>[number];
+  const unreviewedClaims: ClaimRow[] = [];
+  for (let cursor: string | undefined; ; ) {
+    const batch: ClaimRow[] = await db.extractedClaim.findMany({
+      ...claimQuery,
+      take: 500,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    unreviewedClaims.push(...batch);
+    if (batch.length < 500 || unreviewedClaims.length >= 20000) break;
+    cursor = batch[batch.length - 1]?.id;
+  }
   if (unreviewedClaims.length === 0) {
     return stats;
   }
