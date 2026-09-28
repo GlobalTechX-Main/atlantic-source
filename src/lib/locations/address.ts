@@ -174,3 +174,29 @@ export function isNotACompanyLocation(role: LocationRole): boolean {
 export function isPlaceholderAddress(addressLine1: string): boolean {
   return /\(Seeded\)|^Primary (?:Location|Address)$|\(listed city\)/i.test(addressLine1.trim());
 }
+
+/** Every known town mentioned in the text, in reading order (one entry per spot). */
+export function findKnownPlaces(text: string, options: { requireProvince?: boolean } = {}): { place: string; at: number }[] {
+  // "Moncton, NB" / "Dartmouth NS" / "Moncton, New Brunswick" — a town written as part of an address.
+  const provinceTail = options.requireProvince
+    ? String.raw`(?=,?\s*(?:NB|NS|PE|PEI|NL|N\.B\.|N\.S\.|P\.E\.I\.|New Brunswick|Nova Scotia|Prince Edward Island|Newfoundland)(?![A-Za-z]))`
+    : "";
+  const byPosition = new Map<number, string>();
+  for (const place of KNOWN_PLACES) {
+    const re = new RegExp(`(?<![\\p{L}'])${escapeRegExp(place)}(?![\\p{L}'])${provinceTail}`, "giu");
+    for (const m of text.matchAll(re)) {
+      const at = m.index ?? 0;
+      // KNOWN_PLACES is longest-first, so the first name found at a spot is the most complete one.
+      if (!byPosition.has(at)) byPosition.set(at, place === "Saint John's" ? "St. John's" : place);
+    }
+  }
+  return [...byPosition.entries()].sort((x, y) => x[0] - y[0]).map(([at, place]) => ({ place, at }));
+}
+
+/**
+ * The first known town mentioned in a piece of text ("Moncton, NB – 1350 Aviation Ave, Dieppe…" → "Moncton").
+ * Used to tell which office a phone number on a contact page belongs to.
+ */
+export function firstKnownPlace(text: string, options: { requireProvince?: boolean } = {}): string | null {
+  return findKnownPlaces(text, options)[0]?.place ?? null;
+}

@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { getCurrentUserSession } from "@/lib/auth/session";
+import { Logo } from "@/components/layout/Logo";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getCurrentUserSession();
@@ -21,12 +22,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="min-h-screen flex bg-slate-100">
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800">
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-          <Link href="/admin/suppliers" className="text-xl font-bold text-white flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-atlantic-500"></span>
-            AtlanticSource
-          </Link>
-          <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">ADMIN</span>
+        <div className="p-6 border-b border-slate-800">
+          <Logo tone="dark" href="/admin/suppliers" suffix="ADMIN" />
         </div>
 
         <nav className="flex-1 px-4 py-6 space-y-1">
@@ -94,6 +91,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             Audit Logs
           </Link>
         </nav>
+
+        <div className="px-6 py-4 border-t border-slate-800 text-xs">
+          <Link href="/" className="text-slate-400 hover:text-white">
+            ← View public site
+          </Link>
+        </div>
       </aside>
 
       {/* Main Content */}

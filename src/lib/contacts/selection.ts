@@ -1,6 +1,7 @@
 import { ContactTypeEnum, ProvenanceTypeEnum, VerificationStateEnum } from "@prisma/client";
 import { db } from "@/lib/db";
 import { isUsableRfqEmail, isUsableRfqPhone } from "./usability";
+import { officeForPhone, isHomeOffice } from "./office";
 
 /** NB 506/428, NS and PEI 902/782, NL 709/879. */
 const ATLANTIC_AREA_CODES = new Set(["506", "428", "902", "782", "709", "879"]);
@@ -16,6 +17,15 @@ export interface RankedContactCandidate {
   contactType: ContactTypeEnum;
   selectionReason: string;
   sourceDocumentId?: string | null;
+  /** Town of the office this phone number belongs to, when the page says ("Moncton"). */
+  office?: string | null;
+}
+
+export interface ContactSelectionOptions {
+  /** The city the supplier is listed under; its office's number is preferred. */
+  homeCity?: string | null;
+  /** Finds the office a phone number belongs to (usually from the page it was found on). */
+  officeOf?: (claim: { rawValue: string; normalizedValue: string | null; sourceDocumentId?: string | null; evidenceText?: string | null }) => string | null;
 }
 
 export interface SupplierRfqSelectionResult {
@@ -188,7 +198,8 @@ export function selectRfqContactsFromClaims(
     evidenceText?: string | null;
     sourceDocumentId?: string | null;
   }>,
-  supplierDomain?: string | null
+  supplierDomain?: string | null,
+  options: ContactSelectionOptions = {}
 ): SupplierRfqSelectionResult {
   const rankedCandidates: RankedContactCandidate[] = [];
   const rejectedClaimIds: string[] = [];
@@ -229,34 +240,53 @@ export function selectRfqContactsFromClaims(
     const isEmail = val.includes("@");
     const isPhone = !isEmail && /\d{7,}/.test(val);
 
+    let score = evalResult.score;
+    let reason = evalResult.reason;
+    const office = isPhone && options.officeOf ? options.officeOf(c) : null;
+    if (office && options.homeCity) {
+      if (isHomeOffice(office, options.homeCity)) {
+        // The branch in the city the supplier is listed under is the one a buyer expects.
+        score += 60;
+        reason = `${reason}; ${office} office (supplier's listed city)`;
+      } else {
+        score -= 20;
+        reason = `${reason}; ${office} office (another branch)`;
+      }
+    }
+
     rankedCandidates.push({
       claimId: c.id,
       rawValue: c.rawValue,
       normalizedValue: val,
       isEmail,
       isPhone,
-      score: evalResult.score,
+      score,
       contactType: evalResult.contactType,
-      selectionReason: evalResult.reason,
+      selectionReason: reason,
       sourceDocumentId: c.sourceDocumentId,
+      office,
     });
   }
 
   // Sort candidates by score descending
   rankedCandidates.sort((a, b) => b.score - a.score);
 
-  // Top candidate = Primary RFQ Contact
-  const primary: RankedContactCandidate | null = rankedCandidates.length > 0 ? (rankedCandidates[0] ?? null) : null;
-
-  // Next up to 2 candidates = Backup RFQ Contacts
-  const backups = rankedCandidates.slice(1, 3);
-
   const allSelected = rankedCandidates.slice(0, 3);
 
-  // Candidates beyond top 3 are unselected (demoted) but kept as raw evidence
-  for (let i = 3; i < rankedCandidates.length; i++) {
-    const candidate = rankedCandidates[i];
-    if (candidate && candidate.claimId) {
+  // Quote requests go out by email, so keep the best email in the chosen three when there is one.
+  if (allSelected.length === 3 && !allSelected.some((c) => c.isEmail)) {
+    const bestEmail = rankedCandidates.find((c) => c.isEmail);
+    if (bestEmail) allSelected[2] = bestEmail;
+  }
+
+  // Top candidate = Primary RFQ Contact, next up to 2 = Backups
+  const primary: RankedContactCandidate | null = allSelected[0] ?? null;
+  const backups = allSelected.slice(1);
+
+  // Candidates not chosen are demoted but kept as raw evidence
+  const chosen = new Set(allSelected);
+  for (const candidate of rankedCandidates) {
+    if (!chosen.has(candidate) && candidate.claimId) {
       demotedClaimIds.push(candidate.claimId);
     }
   }
@@ -278,7 +308,12 @@ export function selectRfqContactsFromClaims(
 export async function applySupplierRfqContactSelection(supplierCompanyId: string): Promise<SupplierRfqSelectionResult | null> {
   const supplier = await db.supplierCompany.findUnique({
     where: { id: supplierCompanyId },
-    select: { id: true, normalizedDomain: true, websiteUrl: true },
+    select: {
+      id: true,
+      normalizedDomain: true,
+      websiteUrl: true,
+      locations: { orderBy: [{ locationType: "asc" }, { createdAt: "asc" }], take: 1, select: { city: true } },
+    },
   });
 
   if (!supplier) return null;
@@ -302,7 +337,19 @@ export async function applySupplierRfqContactSelection(supplierCompanyId: string
     },
   });
 
-  const selection = selectRfqContactsFromClaims(claims, domain);
+  // Page text for each source page, to tell which office a phone number belongs to.
+  const docIds = [...new Set(claims.map((c) => c.sourceDocumentId).filter((id): id is string => Boolean(id)))];
+  const docs = docIds.length
+    ? await db.sourceDocument.findMany({ where: { id: { in: docIds } }, select: { id: true, extractedText: true } })
+    : [];
+  const textByDoc = new Map(docs.map((d) => [d.id, d.extractedText]));
+
+  const selection = selectRfqContactsFromClaims(claims, domain, {
+    homeCity: supplier.locations[0]?.city ?? null,
+    officeOf: (c) =>
+      officeForPhone(c.sourceDocumentId ? textByDoc.get(c.sourceDocumentId) : null, c.normalizedValue || c.rawValue) ??
+      officeForPhone(c.evidenceText, c.normalizedValue || c.rawValue),
+  });
 
   // Clear existing materialized contacts for this supplier
   await db.contact.deleteMany({
@@ -330,6 +377,7 @@ export async function applySupplierRfqContactSelection(supplierCompanyId: string
       data: {
         supplierCompanyId,
         name: nameLabel,
+        title: candidate.office ? `${candidate.office} office` : null,
         publicBusinessEmail: email,
         normalizedEmail: email,
         publicBusinessPhone: phone,

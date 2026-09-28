@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { SupplierCartDrawer, SupplierCartProvider } from "@/components/rfq/SupplierCart";
+import { SiteChrome } from "@/components/layout/SiteChrome";
 
 export const metadata: Metadata = {
   title: "AtlanticSource — B2B Supplier Intelligence & Sourcing",
@@ -16,7 +17,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased bg-slate-50 text-slate-900 min-h-screen">
         <SupplierCartProvider>
-          {children}
+          <SiteChrome>{children}</SiteChrome>
           <SupplierCartDrawer />
         </SupplierCartProvider>
       </body>

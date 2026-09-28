@@ -87,18 +87,6 @@ export default async function HomePage() {
 
   return (
     <div className="bg-slate-50">
-      {/* Top bar */}
-      <header className="max-w-6xl mx-auto px-4 py-5 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-extrabold text-slate-900 text-lg">
-          <span className="w-8 h-8 rounded-lg bg-atlantic-600 text-white flex items-center justify-center text-sm">AS</span>
-          AtlanticSource
-        </Link>
-        <nav className="flex items-center gap-5 text-sm font-medium text-slate-600">
-          <Link href="/suppliers" className="hover:text-atlantic-600">Browse suppliers</Link>
-          <Link href="/data-sources" className="hidden sm:inline hover:text-atlantic-600">Where our data comes from</Link>
-        </nav>
-      </header>
-
       {/* Hero */}
       <section className="max-w-6xl mx-auto px-4 pt-10 pb-16 text-center space-y-7">
         <div className="inline-flex items-center gap-2 px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-atlantic-800 bg-atlantic-50 rounded-full border border-atlantic-200">
@@ -197,7 +185,7 @@ export default async function HomePage() {
       </section>
 
       {/* How it works */}
-      <section className="max-w-6xl mx-auto px-4 py-16 space-y-10">
+      <section id="how-it-works" className="scroll-mt-20 max-w-6xl mx-auto px-4 py-16 space-y-10">
         <div className="text-center space-y-2">
           <span className="text-xs font-bold uppercase tracking-wider text-atlantic-600">How it works</span>
           <h2 className="text-3xl font-extrabold text-slate-900">Three steps from “who can do this?” to quotes.</h2>
@@ -265,7 +253,7 @@ export default async function HomePage() {
       </section>
 
       {/* Two audiences */}
-      <section className="bg-white border-t border-slate-200">
+      <section id="for-suppliers" className="scroll-mt-20 bg-white border-t border-slate-200">
         <div className="max-w-6xl mx-auto px-4 py-16 grid md:grid-cols-2 gap-6">
           <div className="rounded-2xl border border-slate-200 p-8 space-y-4">
             <HardHat className="w-8 h-8 text-atlantic-600" />
@@ -297,16 +285,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <footer className="border-t border-slate-200">
-        <div className="max-w-6xl mx-auto px-4 py-6 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-          <span>© {new Date().getFullYear()} AtlanticSource</span>
-          <div className="flex gap-4">
-            <Link href="/data-sources" className="hover:text-slate-700">Data sources</Link>
-            <Link href="/privacy" className="hover:text-slate-700">Privacy</Link>
-            <Link href="/terms" className="hover:text-slate-700">Terms</Link>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

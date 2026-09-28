@@ -4,6 +4,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { ProfileStatusEnum } from "@prisma/client";
 import { calculateContactConfidence } from "@/lib/contacts/confidence";
+import { isPlaceholderAddress } from "@/lib/locations/address";
 import { ProfileActionsBlock } from "./profile-actions";
 import {
   MapPin,
@@ -62,6 +63,7 @@ interface ProfileContact {
   provenanceType: string;
   verificationState: string;
   bouncedAt?: Date | string | null;
+  sourceDocument?: { sourceUrl: string } | null;
 }
 
 interface ProfileLocation {
@@ -93,6 +95,25 @@ interface SupplierProfileData {
   serviceRegions: ProfileServiceRegion[];
   equipments: ProfileEquipment[];
   contacts: ProfileContact[];
+  /** A crawled contact page, linked when there is no email on file. */
+  sourceDocuments?: { sourceUrl: string }[];
+}
+
+/** "5065478070" → "(506) 547-8070" */
+function formatPhone(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  const ten = d.length === 11 && d.startsWith("1") ? d.slice(1) : d;
+  return ten.length === 10 ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : raw;
+}
+
+/** "https://www.example.com/contact/" → "example.com/contact" */
+function shortUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname.replace(/^www\./, "")}${u.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return url;
+  }
 }
 
 interface ProfilePageProps {
@@ -118,7 +139,7 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
           profileStatus: ProfileStatusEnum.PUBLISHED,
         },
         include: {
-          locations: true,
+          locations: { orderBy: [{ locationType: "asc" }, { createdAt: "asc" }] },
           capabilities: {
             where: { published: true },
             include: { capability: true },
@@ -138,7 +159,12 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
             where: { published: true },
             include: { equipmentType: true },
           },
-          contacts: true,
+          contacts: { include: { sourceDocument: { select: { sourceUrl: true } } }, orderBy: { name: "asc" } },
+          sourceDocuments: {
+            where: { OR: [{ pageType: "CONTACT" }, { sourceUrl: { contains: "contact", mode: "insensitive" } }] },
+            select: { sourceUrl: true },
+            take: 1,
+          },
         },
       });
     } catch {
@@ -196,8 +222,9 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
               {supplier.locations[0] && (
                 <span className="flex items-center gap-1 font-medium text-slate-700">
                   <MapPin className="w-4 h-4 text-slate-400" />
-                  {supplier.locations[0].addressLine1}, {supplier.locations[0].city},{" "}
-                  {supplier.locations[0].province} {supplier.locations[0].postalCode}
+                  {isPlaceholderAddress(supplier.locations[0].addressLine1)
+                    ? `${supplier.locations[0].city}, ${supplier.locations[0].province}`
+                    : `${supplier.locations[0].addressLine1}, ${supplier.locations[0].city}, ${supplier.locations[0].province} ${supplier.locations[0].postalCode ?? ""}`}
                 </span>
               )}
 
@@ -387,7 +414,7 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <Mail className="w-4 h-4 text-atlantic-600" />
-            Public Business Contacts
+            How to Reach Them
           </h3>
 
           <div className="flex items-center gap-2 text-xs">
@@ -406,36 +433,76 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {supplier.contacts.map((con: ProfileContact) => (
-            <div
-              key={con.id}
-              className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs"
-            >
-              <div>
-                <span className="font-bold text-slate-900 text-sm block">
-                  {con.name || "Business Contact Desk"}
-                </span>
-                {con.title && <span className="text-slate-500 font-medium">{con.title}</span>}
-              </div>
+        {(() => {
+          // Public page: phone lines only. Emails stay on file and are used to deliver
+          // quote requests, so they can't be harvested and named people aren't exposed.
+          const phones = supplier.contacts.filter((c) => c.publicBusinessPhone);
+          const hasEmail = supplier.contacts.some((c) => c.publicBusinessEmail);
+          const contactPage = supplier.sourceDocuments?.[0]?.sourceUrl;
+          return (
+            <div className="space-y-4">
+              {phones.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {phones.map((con) => (
+                    <div key={con.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-slate-900 text-sm">{con.title || "Main line"}</span>
+                        {con.name?.startsWith("Primary") && (
+                          <span className="px-2 py-0.5 rounded bg-atlantic-50 text-atlantic-700 border border-atlantic-200 text-[10px] font-bold">
+                            BEST NUMBER
+                          </span>
+                        )}
+                      </div>
+                      <a
+                        href={`tel:${(con.publicBusinessPhone || "").replace(/\D/g, "")}`}
+                        className="flex items-center gap-2 font-mono text-sm text-slate-800 hover:text-atlantic-600"
+                      >
+                        <Phone className="w-3.5 h-3.5 text-slate-400" />
+                        {formatPhone(con.publicBusinessPhone || "")}
+                      </a>
+                      {con.sourceDocument?.sourceUrl && (
+                        <a
+                          href={con.sourceDocument.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-atlantic-600 hover:underline"
+                        >
+                          Source: {shortUrl(con.sourceDocument.sourceUrl)}
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
-              <div className="space-y-1 text-slate-700 font-mono text-[11px] pt-1">
-                {con.publicBusinessEmail && (
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{con.publicBusinessEmail}</span>
-                  </div>
-                )}
-                {con.publicBusinessPhone && (
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{con.publicBusinessPhone}</span>
-                  </div>
+              <div className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 text-xs text-slate-600">
+                <Mail className="w-4 h-4 text-atlantic-600 flex-shrink-0 mt-0.5" />
+                {hasEmail ? (
+                  <span>
+                    <strong className="text-slate-800">Email on file.</strong> Add this supplier to a sourcing request and we&apos;ll deliver it to
+                    their business email for you.
+                  </span>
+                ) : (
+                  <span>
+                    <strong className="text-slate-800">No public email found.</strong>{" "}
+                    {contactPage ? (
+                      <>
+                        Call them, or use the contact form on{" "}
+                        <a href={contactPage} target="_blank" rel="noopener noreferrer" className="text-atlantic-600 hover:underline">
+                          their website
+                        </a>
+                        .
+                      </>
+                    ) : (
+                      "Call them, or reach out through their website."
+                    )}
+                  </span>
                 )}
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })()}
       </div>
     </div>
   );
