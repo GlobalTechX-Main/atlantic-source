@@ -8,6 +8,8 @@ import { IndustryExtractor } from "./extractors/industry";
 import { CertificationExtractor } from "./extractors/certification";
 import { EquipmentExtractor } from "./extractors/equipment";
 import { ServiceRegionExtractor } from "./extractors/serviceRegion";
+import { ListedServiceExtractor } from "./extractors/listedService";
+import { SocialLinkExtractor } from "./extractors/social";
 import { VerificationStateEnum } from "@prisma/client";
 
 export class ExtractionEngine {
@@ -20,6 +22,8 @@ export class ExtractionEngine {
     new CertificationExtractor(),
     new EquipmentExtractor(),
     new ServiceRegionExtractor(),
+    new ListedServiceExtractor(),
+    new SocialLinkExtractor(),
   ];
 
   public async runExtraction(input: ExtractorInput): Promise<ExtractedClaimCandidate[]> {

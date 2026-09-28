@@ -19,6 +19,8 @@ export interface ExtractedPageContent {
   imageAlts: string[];
   mailtoLinks: string[];
   telLinks: string[];
+  /** Every web link on the page (menus and footer included), absolute URL plus its text. */
+  links: { href: string; text: string }[];
   /** SHA-256 of the raw HTML. */
   contentHash: string;
   /** SHA-256 of the normalized main content, used to spot the same page at two URLs. */
@@ -98,6 +100,27 @@ export function parseAndSanitizeHtml(html: string, pageUrl: string): ExtractedPa
     if (phone && !telLinks.includes(phone)) telLinks.push(phone);
   });
 
+  // All web links, before anything is removed: service menus and social icons live in headers/footers.
+  const links: { href: string; text: string }[] = [];
+  const seenLinks = new Set<string>();
+  $("a[href]").each((_, el) => {
+    if (links.length >= 400) return;
+    const rawHref = ($(el).attr("href") || "").trim();
+    if (!rawHref || rawHref.startsWith("#") || /^(mailto|tel|javascript):/i.test(rawHref)) return;
+    let href: string;
+    try {
+      href = new URL(rawHref, pageUrl).toString();
+    } catch {
+      return;
+    }
+    if (!/^https?:/i.test(href)) return;
+    const text = ($(el).text() || $(el).attr("aria-label") || $(el).attr("title") || "").replace(/\s+/g, " ").trim();
+    const k = `${href}|${text}`;
+    if (seenLinks.has(k)) return;
+    seenLinks.add(k);
+    links.push({ href, text });
+  });
+
   // Full page (header and footer kept: addresses and phone numbers usually live there)
   $(NON_CONTENT_TAGS).remove();
   $(".cookie-banner, #cookie-banner, .privacy-policy-banner").remove();
@@ -161,6 +184,7 @@ export function parseAndSanitizeHtml(html: string, pageUrl: string): ExtractedPa
     imageAlts,
     mailtoLinks,
     telLinks,
+    links,
     contentHash,
     contentFingerprint,
   };

@@ -1,7 +1,18 @@
 import { ExtractionMethodEnum } from "@prisma/client";
 
 export interface ExtractedClaimCandidate {
-  claimType: "CAPABILITY" | "INDUSTRY" | "CERTIFICATION" | "EQUIPMENT" | "LOCATION" | "SERVICE_REGION" | "CONTACT";
+  claimType:
+    | "CAPABILITY"
+    | "INDUSTRY"
+    | "CERTIFICATION"
+    | "EQUIPMENT"
+    | "LOCATION"
+    | "SERVICE_REGION"
+    | "CONTACT"
+    /** A service named on the company's own site, in its own words ("Heavy Lift & Rigging"). */
+    | "SERVICE_LISTED"
+    /** The company's own social media page (rawValue = URL). */
+    | "SOCIAL";
   rawValue: string;
   normalizedValue?: string;
   evidenceText: string;
@@ -43,6 +54,8 @@ export interface ExtractorInput {
   siteIsRetail?: boolean;
   /** Page classification from link discovery (HOME, SERVICES, CONTACT, ...). */
   pageType?: string;
+  /** Web links on the page (menus and footer included) with their text. */
+  links?: { href: string; text: string }[];
 }
 
 export interface BaseExtractor {

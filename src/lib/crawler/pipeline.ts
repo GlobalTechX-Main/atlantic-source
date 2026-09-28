@@ -196,6 +196,7 @@ export function toExtractorInput(page: CrawledPage, sourceDocumentId: string, su
     jsonLdScripts: page.parsed.jsonLdScripts,
     mailtoLinks: page.parsed.mailtoLinks,
     telLinks: page.parsed.telLinks,
+    links: page.parsed.links,
     canonicalUrl: page.parsed.canonicalUrl,
     pageType: page.classification,
     siteIsRetail,

@@ -2,9 +2,17 @@ import React from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { ProfileStatusEnum } from "@prisma/client";
+import { ProfileStatusEnum, VerificationStateEnum } from "@prisma/client";
 import { calculateContactConfidence } from "@/lib/contacts/confidence";
 import { isPlaceholderAddress } from "@/lib/locations/address";
+import {
+  summariseListedServices,
+  pickSocialLinks,
+  isPublicContactType,
+  contactOrder,
+  PublishedClaimRow,
+  SocialProfileLink,
+} from "@/lib/supplier/profileExtras";
 import { ProfileActionsBlock } from "./profile-actions";
 import {
   MapPin,
@@ -18,7 +26,24 @@ import {
   Phone,
   ArrowLeft,
   ExternalLink,
+  ListChecks,
+  Building2,
+  Share2,
+  Linkedin,
+  Facebook,
+  Instagram,
+  Twitter,
+  Youtube,
 } from "lucide-react";
+
+const SOCIAL_ICONS: Record<SocialProfileLink["platform"], React.ComponentType<{ className?: string }>> = {
+  LINKEDIN: Linkedin,
+  FACEBOOK: Facebook,
+  INSTAGRAM: Instagram,
+  X: Twitter,
+  YOUTUBE: Youtube,
+  TIKTOK: Share2,
+};
 
 interface ProfileCapability {
   id: string;
@@ -106,6 +131,15 @@ function formatPhone(raw: string): string {
   return ten.length === 10 ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : raw;
 }
 
+/** Full address line without repeating the city or postal code already written in it. */
+function formatAddress(l: { addressLine1: string; city: string; province: string; postalCode?: string | null }): string {
+  if (isPlaceholderAddress(l.addressLine1)) return `${l.city}, ${l.province}`;
+  const line = l.addressLine1.trim();
+  const hasCity = line.toLowerCase().includes(l.city.toLowerCase());
+  const hasPostal = !l.postalCode || line.replace(/\s/g, "").toUpperCase().includes(l.postalCode.replace(/\s/g, "").toUpperCase());
+  return [line, hasCity ? "" : `, ${l.city}, ${l.province}`, hasPostal ? "" : ` ${l.postalCode}`].join("");
+}
+
 /** "https://www.example.com/contact/" → "example.com/contact" */
 function shortUrl(url: string): string {
   try {
@@ -176,6 +210,28 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
     notFound();
   }
 
+  // Services named on the company's site and its social pages (approved facts only).
+  let extraRows: PublishedClaimRow[] = [];
+  if (process.env.NODE_ENV !== "test") {
+    try {
+      const rows = await db.extractedClaim.findMany({
+        where: {
+          supplierCompanyId: supplier.id,
+          claimType: { in: ["SERVICE_LISTED", "SOCIAL"] },
+          reviewState: { in: [VerificationStateEnum.APPROVED, VerificationStateEnum.AUTO_APPROVED] },
+        },
+        orderBy: { createdAt: "asc" },
+        select: { claimType: true, rawValue: true, sourceDocument: { select: { sourceUrl: true } } },
+      });
+      extraRows = rows.map((r) => ({ claimType: r.claimType, rawValue: r.rawValue, sourceUrl: r.sourceDocument?.sourceUrl }));
+    } catch {
+      // Profile still renders without them
+    }
+  }
+  const listedServices = summariseListedServices(extraRows);
+  const socialLinks = pickSocialLinks(extraRows);
+  const sortedContacts = [...supplier.contacts].sort((a, b) => contactOrder(a.name) - contactOrder(b.name));
+
   const contactConfidence = calculateContactConfidence(
     supplier.contacts,
     supplier.websiteUrl,
@@ -222,9 +278,7 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
               {supplier.locations[0] && (
                 <span className="flex items-center gap-1 font-medium text-slate-700">
                   <MapPin className="w-4 h-4 text-slate-400" />
-                  {isPlaceholderAddress(supplier.locations[0].addressLine1)
-                    ? `${supplier.locations[0].city}, ${supplier.locations[0].province}`
-                    : `${supplier.locations[0].addressLine1}, ${supplier.locations[0].city}, ${supplier.locations[0].province} ${supplier.locations[0].postalCode ?? ""}`}
+                  {formatAddress(supplier.locations[0])}
                 </span>
               )}
 
@@ -281,14 +335,53 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
         </div>
       </div>
 
+      {/* Services in the company's own words */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+        <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+          <ListChecks className="w-4 h-4 text-atlantic-600" />
+          Services Listed on Their Website
+        </h3>
+        {listedServices.names.length === 0 ? (
+          <p className="text-xs text-slate-500 italic">
+            No services list found on their website yet. See the capabilities below, or visit their site.
+          </p>
+        ) : (
+          <>
+            <ul className="flex flex-wrap gap-2">
+              {listedServices.names.map((name) => (
+                <li key={name} className="px-3 py-1.5 text-xs font-medium text-slate-800 bg-slate-50 border border-slate-200 rounded-lg">
+                  {name}
+                </li>
+              ))}
+            </ul>
+            {listedServices.sources.length > 0 && (
+              <p className="text-[11px] text-slate-500">
+                Source:{" "}
+                {listedServices.sources.map((src, i) => (
+                  <span key={src}>
+                    {i > 0 && ", "}
+                    <a href={src} target="_blank" rel="noopener noreferrer" className="hover:text-atlantic-600 hover:underline">
+                      {shortUrl(src)}
+                    </a>
+                  </span>
+                ))}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Grid: Capabilities & Certifications */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Capabilities Section */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
             <Wrench className="w-4 h-4 text-atlantic-600" />
-            Capabilities & Services
+            Capabilities
           </h3>
+          {supplier.capabilities.length === 0 && (
+            <p className="text-xs text-slate-500 italic">None matched to our standard categories yet.</p>
+          )}
 
           <div className="space-y-3">
             {supplier.capabilities.map((c: ProfileCapability) => (
@@ -434,19 +527,32 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
         </div>
 
         {(() => {
-          // Public page: phone lines only. Emails stay on file and are used to deliver
-          // quote requests, so they can't be harvested and named people aren't exposed.
-          const phones = supplier.contacts.filter((c) => c.publicBusinessPhone);
-          const hasEmail = supplier.contacts.some((c) => c.publicBusinessEmail);
+          // Phones and department emails (sales@, info@) are shown. Named people's emails
+          // stay on file and are only used to deliver quote requests.
+          const phones = sortedContacts.filter((c) => c.publicBusinessPhone);
+          const publicEmails = sortedContacts.filter((c) => c.publicBusinessEmail && isPublicContactType(c.contactType));
+          const privateEmailCount = sortedContacts.filter((c) => c.publicBusinessEmail && !isPublicContactType(c.contactType)).length;
           const contactPage = supplier.sourceDocuments?.[0]?.sourceUrl;
+          const sourceLink = (url?: string | null) =>
+            url ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-atlantic-600 hover:underline"
+              >
+                Source: {shortUrl(url)}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : null;
           return (
             <div className="space-y-4">
               {phones.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {phones.map((con) => (
-                    <div key={con.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {phones.map((con, i) => (
+                    <div key={con.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-slate-900 text-sm">{con.title || "Main line"}</span>
+                        <span className="font-bold text-slate-900 text-sm">{con.title || (i === 0 ? "Main line" : "Phone")}</span>
                         {con.name?.startsWith("Primary") && (
                           <span className="px-2 py-0.5 rounded bg-atlantic-50 text-atlantic-700 border border-atlantic-200 text-[10px] font-bold">
                             BEST NUMBER
@@ -460,17 +566,33 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
                         <Phone className="w-3.5 h-3.5 text-slate-400" />
                         {formatPhone(con.publicBusinessPhone || "")}
                       </a>
-                      {con.sourceDocument?.sourceUrl && (
-                        <a
-                          href={con.sourceDocument.sourceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-atlantic-600 hover:underline"
-                        >
-                          Source: {shortUrl(con.sourceDocument.sourceUrl)}
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
+                      {sourceLink(con.sourceDocument?.sourceUrl)}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {publicEmails.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {publicEmails.map((con) => (
+                    <div key={con.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
+                      <span className="font-bold text-slate-900 text-sm block">
+                        {con.contactType === "SALES"
+                          ? "Sales"
+                          : con.contactType === "ESTIMATING"
+                            ? "Estimating / quotes"
+                            : con.contactType === "PROCUREMENT"
+                              ? "Quotes / procurement"
+                              : "General inquiries"}
+                      </span>
+                      <a
+                        href={`mailto:${con.publicBusinessEmail}`}
+                        className="flex items-center gap-2 font-mono text-[13px] text-slate-800 hover:text-atlantic-600 break-all"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        {con.publicBusinessEmail}
+                      </a>
+                      {sourceLink(con.sourceDocument?.sourceUrl)}
                     </div>
                   ))}
                 </div>
@@ -478,10 +600,12 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
 
               <div className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 text-xs text-slate-600">
                 <Mail className="w-4 h-4 text-atlantic-600 flex-shrink-0 mt-0.5" />
-                {hasEmail ? (
+                {publicEmails.length > 0 || privateEmailCount > 0 ? (
                   <span>
-                    <strong className="text-slate-800">Email on file.</strong> Add this supplier to a sourcing request and we&apos;ll deliver it to
-                    their business email for you.
+                    <strong className="text-slate-800">Send a quote request</strong> from AtlanticSource and we&apos;ll deliver it to their best
+                    business email.
+                    {privateEmailCount > 0 &&
+                      ` ${privateEmailCount} staff email${privateEmailCount === 1 ? " is" : "s are"} on file and kept private.`}
                   </span>
                 ) : (
                   <span>
@@ -500,9 +624,55 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
                   </span>
                 )}
               </div>
+
+              {socialLinks.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <span className="text-xs font-semibold text-slate-500 mr-1">Follow:</span>
+                  {socialLinks.map((sl) => {
+                    const Icon = SOCIAL_ICONS[sl.platform];
+                    return (
+                      <a
+                        key={sl.url}
+                        href={sl.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:border-atlantic-500 hover:text-atlantic-600 transition"
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {sl.label}
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })()}
+
+        {supplier.locations.filter((l) => !isPlaceholderAddress(l.addressLine1)).length > 1 && (
+          <div className="pt-4 border-t border-slate-100 space-y-3">
+            <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-atlantic-600" />
+              Offices
+            </h4>
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700">
+              {supplier.locations
+                .filter((l) => !isPlaceholderAddress(l.addressLine1))
+                .map((l) => (
+                  <li key={l.id} className="flex items-start gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 flex-shrink-0" />
+                    <span>
+                      <strong className="text-slate-900">
+                        {l.city}, {l.province}
+                      </strong>
+                      <br />
+                      {formatAddress(l)}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

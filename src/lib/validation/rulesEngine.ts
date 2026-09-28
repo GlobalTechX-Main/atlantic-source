@@ -474,6 +474,43 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
     };
   }
 
+  // 8b. Services named on the company's own site (menu links, service pages, services-page headings)
+  if (input.claimType === "SERVICE_LISTED") {
+    if (input.extractionConfidence >= 0.85) {
+      return {
+        decision: "APPROVE",
+        confidence: input.extractionConfidence,
+        risk: "LOW",
+        reason: "Service named on the company's own services page or menu",
+        evidenceSupported: true,
+        validatorVersion: "1.0.0",
+        validatorActor: "RULE_ENGINE:LISTED_SERVICE",
+      };
+    }
+    return {
+      decision: "HUMAN_REVIEW",
+      confidence: input.extractionConfidence,
+      risk: "MEDIUM",
+      reason: "Heading on the services page that may be a slogan rather than a service",
+      evidenceSupported: true,
+      validatorVersion: "1.0.0",
+      validatorActor: "RULE_ENGINE:LISTED_SERVICE_UNCLEAR",
+    };
+  }
+
+  // 8c. Social media pages linked from the company's own site
+  if (input.claimType === "SOCIAL") {
+    return {
+      decision: "APPROVE",
+      confidence: 0.9,
+      risk: "LOW",
+      reason: "Company social media page linked from its own website",
+      evidenceSupported: true,
+      validatorVersion: "1.0.0",
+      validatorActor: "RULE_ENGINE:SOCIAL_LINK",
+    };
+  }
+
   // 9. Default Fallback: Ambiguous / Low-Confidence Claims require human review
   return {
     decision: "HUMAN_REVIEW",

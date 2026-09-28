@@ -3,6 +3,9 @@ import { db } from "@/lib/db";
 import { isUsableRfqEmail, isUsableRfqPhone } from "./usability";
 import { officeForPhone, isHomeOffice } from "./office";
 
+/** Most contacts kept per supplier: the three RFQ contacts plus other office lines and emails. */
+export const MAX_CONTACTS = 12;
+
 /** NB 506/428, NS and PEI 902/782, NL 709/879. */
 const ATLANTIC_AREA_CODES = new Set(["506", "428", "902", "782", "709", "879"]);
 const TOLL_FREE_AREA_CODES = new Set(["800", "833", "844", "855", "866", "877", "888"]);
@@ -32,6 +35,8 @@ export interface SupplierRfqSelectionResult {
   primary: RankedContactCandidate | null;
   backups: RankedContactCandidate[];
   allSelected: RankedContactCandidate[];
+  /** Other usable contacts shown on the profile under the chosen three (office lines, general emails). */
+  extras: RankedContactCandidate[];
   rejectedClaimIds: string[];
   /** Usable contacts that simply ranked below the chosen three. */
   demotedClaimIds: string[];
@@ -283,18 +288,23 @@ export function selectRfqContactsFromClaims(
   const primary: RankedContactCandidate | null = allSelected[0] ?? null;
   const backups = allSelected.slice(1);
 
-  // Candidates not chosen are demoted but kept as raw evidence
+  // Other usable contacts are kept too (up to MAX_CONTACTS in total) so the profile shows
+  // every office line and general email the site lists. The rest stay as raw evidence.
   const chosen = new Set(allSelected);
+  const extras: RankedContactCandidate[] = [];
   for (const candidate of rankedCandidates) {
-    if (!chosen.has(candidate) && candidate.claimId) {
-      demotedClaimIds.push(candidate.claimId);
-    }
+    if (chosen.has(candidate)) continue;
+    // Head-office numbers in Toronto or Montreal are not useful extras for an Atlantic buyer.
+    const outOfRegionPhone = candidate.isPhone && candidate.score < 400;
+    if (!outOfRegionPhone && allSelected.length + extras.length < MAX_CONTACTS) extras.push(candidate);
+    else if (candidate.claimId) demotedClaimIds.push(candidate.claimId);
   }
 
   return {
     primary,
     backups,
     allSelected,
+    extras,
     rejectedClaimIds,
     demotedClaimIds,
     ambiguousClaimIds,
@@ -356,13 +366,18 @@ export async function applySupplierRfqContactSelection(supplierCompanyId: string
     where: { supplierCompanyId },
   });
 
-  // Materialize Primary and Backup contacts into db.contact
-  for (let i = 0; i < selection.allSelected.length; i++) {
-    const candidate = selection.allSelected[i];
+  // Materialize Primary and Backup contacts, then the other usable ones, into db.contact
+  const toSave = [...selection.allSelected, ...selection.extras];
+  for (let i = 0; i < toSave.length; i++) {
+    const candidate = toSave[i];
     if (!candidate) continue;
 
     const isPrimary = i === 0;
-    const nameLabel = isPrimary ? "Primary RFQ Contact" : `Backup RFQ Contact ${i}`;
+    const nameLabel = isPrimary
+      ? "Primary RFQ Contact"
+      : i < selection.allSelected.length
+        ? `Backup RFQ Contact ${i}`
+        : `Other Contact ${String(i - selection.allSelected.length + 1).padStart(2, "0")}`;
 
     let email: string | null = null;
     let phone: string | null = null;
@@ -416,14 +431,14 @@ export async function applySupplierRfqContactSelection(supplierCompanyId: string
         reviewState: "AUTO_REJECTED",
         validationDecision: "REJECT",
         validationRisk: "LOW",
-        validationReason: "Valid contact, but ranked below the three chosen RFQ contacts",
+        validationReason: `Valid contact, but ranked below the ${MAX_CONTACTS} contacts kept for this supplier`,
         validationActor: "RULE_ENGINE:RFQ_CONTACT_SELECTION",
       },
     });
   }
 
   // Update selected claims in ExtractedClaim to AUTO_APPROVED
-  const selectedClaimIds = selection.allSelected.map((c) => c.claimId).filter((id): id is string => Boolean(id));
+  const selectedClaimIds = toSave.map((c) => c.claimId).filter((id): id is string => Boolean(id));
   if (selectedClaimIds.length > 0) {
     await db.extractedClaim.updateMany({
       where: {
@@ -434,7 +449,7 @@ export async function applySupplierRfqContactSelection(supplierCompanyId: string
         reviewState: "AUTO_APPROVED",
         validationDecision: "APPROVE",
         validationRisk: "LOW",
-        validationReason: "Selected as primary or backup RFQ contact",
+        validationReason: "Selected as an RFQ contact or shown as another company contact",
         validationActor: "RULE_ENGINE:RFQ_CONTACT_SELECTION",
       },
     });

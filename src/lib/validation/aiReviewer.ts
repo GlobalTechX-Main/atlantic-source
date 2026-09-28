@@ -45,6 +45,8 @@ const WHAT_TO_CHECK: Record<string, string> = {
   SERVICE_REGION: "Does this company say it serves this region?",
   CERTIFICATION: "Does the text state that this company currently holds this certification?",
   CONTACT: "Is this a business contact for sales or quotes at this company?",
+  SERVICE_LISTED: "Is this the name of a service this company offers (not a slogan, product, industry, project or page title)?",
+  SOCIAL: "Is this the company's own social media page?",
 };
 
 const SYSTEM_PROMPT = `You check facts that a web crawler extracted from a company's public website for a B2B supplier directory in Atlantic Canada.
