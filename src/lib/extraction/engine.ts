@@ -10,6 +10,8 @@ import { EquipmentExtractor } from "./extractors/equipment";
 import { ServiceRegionExtractor } from "./extractors/serviceRegion";
 import { ListedServiceExtractor } from "./extractors/listedService";
 import { SocialLinkExtractor } from "./extractors/social";
+import { BusinessHoursExtractor } from "./extractors/businessHours";
+import { ListedCertificationExtractor } from "./extractors/listedCertification";
 import { VerificationStateEnum } from "@prisma/client";
 
 export class ExtractionEngine {
@@ -27,6 +29,8 @@ export class ExtractionEngine {
     new ServiceRegionExtractor(),
     new ListedServiceExtractor(),
     new SocialLinkExtractor(),
+    new BusinessHoursExtractor(),
+    new ListedCertificationExtractor(),
   ];
 
   public async runExtraction(input: ExtractorInput): Promise<ExtractedClaimCandidate[]> {
@@ -49,7 +53,7 @@ export class ExtractionEngine {
       const key = `${cand.claimType}:${cand.rawValue.toLowerCase().trim()}`;
       if (seen.has(key)) continue;
       // A service menu repeats on every page: keep each listed service once per crawl.
-      if (cand.claimType === "SERVICE_LISTED") {
+      if (cand.claimType === "SERVICE_LISTED" || cand.claimType === "PRODUCT_LISTED") {
         if (this.servicesSeenThisCrawl.has(key)) continue;
         this.servicesSeenThisCrawl.add(key);
       }
@@ -60,9 +64,10 @@ export class ExtractionEngine {
     // Persist ExtractedClaim records to Database if not in offline test mode
     if (process.env.NODE_ENV !== "test") {
       try {
-        for (const cand of uniqueCandidates) {
-          await db.extractedClaim.create({
-            data: {
+        // One database round trip per page instead of one per fact.
+        if (uniqueCandidates.length > 0) {
+          await db.extractedClaim.createMany({
+            data: uniqueCandidates.map((cand) => ({
               supplierCompanyId: input.supplierCompanyId,
               sourceDocumentId: input.sourceDocumentId,
               claimType: cand.claimType,
@@ -73,7 +78,7 @@ export class ExtractionEngine {
               extractionMethod: cand.extractionMethod,
               confidence: cand.confidence,
               reviewState: VerificationStateEnum.UNREVIEWED,
-            },
+            })),
           });
         }
       } catch (err) {

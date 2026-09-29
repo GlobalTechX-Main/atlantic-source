@@ -24,6 +24,7 @@ You are working on **AtlanticSource**, a B2B supplier-intelligence and sourcing 
 ### Rule 4: Evidence-Backed Data Publishing & Provenance Rule
 - NEVER publish extracted supplier capability claims without explicit source provenance (`CrawlPage` reference, raw HTML text snippet, character offset, and CSS/XPath selector).
 - NEVER silently classify crawler output as "verified" or "published". All extracted claims start in `DRAFT` / `UNREVIEWED` state and require explicit human admin review or verified claim approval.
+- Exception (owner decision, Sept 2026): standards and memberships a company lists on its own certifications page (`CERTIFICATION_LISTED`) may publish automatically, but only labelled "as stated by the company, not verified". They never grant a verified status. Official certifications (`CERTIFICATION`: CWB, ISO, COR…) still require human review.
 - Preserving provenance data is non-negotiable.
 
 ### Rule 5: Crawler Network Safety & SSRF Guard Compliance

@@ -47,6 +47,9 @@ const WHAT_TO_CHECK: Record<string, string> = {
   CONTACT: "Is this a business contact for sales or quotes at this company?",
   SERVICE_LISTED: "Is this the name of a service this company offers (not a slogan, product, industry, project or page title)?",
   SOCIAL: "Is this the company's own social media page?",
+  PRODUCT_LISTED: "Is this the name of a product line this company makes or supplies?",
+  CERTIFICATION_LISTED: "Does the text say this company holds this certification, meets this standard, or is a member of this organisation?",
+  BUSINESS_HOURS: "Are these this company's opening hours?",
 };
 
 const SYSTEM_PROMPT = `You check facts that a web crawler extracted from a company's public website for a B2B supplier directory in Atlantic Canada.
@@ -138,7 +141,7 @@ export async function secondOpinion(
   const confident = answer.decision !== "UNSURE" && answer.confidence >= config.minConfidence;
 
   // Certifications: AI may only recommend. A person always decides.
-  if (input.claimType === "CERTIFICATION" || !confident || answer.decision === "UNSURE") {
+  if (input.claimType === "CERTIFICATION" || input.claimType === "CERTIFICATION_LISTED" || !confident || answer.decision === "UNSURE") {
     const note = answer.decision === "UNSURE" ? "not sure" : `suggests ${answer.decision.toLowerCase()} (${Math.round(answer.confidence * 100)}%)`;
     return { ...rulesResult, reason: `${rulesResult.reason} | ${label} ${note}: ${answer.reason}` };
   }

@@ -7,6 +7,7 @@ import { calculateContactConfidence } from "@/lib/contacts/confidence";
 import { isPlaceholderAddress } from "@/lib/locations/address";
 import {
   summariseListedServices,
+  summariseHours,
   pickSocialLinks,
   isPublicContactType,
   contactOrder,
@@ -28,6 +29,7 @@ import {
   ExternalLink,
   ListChecks,
   Building2,
+  Clock,
   Share2,
   Linkedin,
   Facebook,
@@ -217,7 +219,7 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
       const rows = await db.extractedClaim.findMany({
         where: {
           supplierCompanyId: supplier.id,
-          claimType: { in: ["SERVICE_LISTED", "SOCIAL"] },
+          claimType: { in: ["SERVICE_LISTED", "PRODUCT_LISTED", "CERTIFICATION_LISTED", "SOCIAL", "BUSINESS_HOURS"] },
           reviewState: { in: [VerificationStateEnum.APPROVED, VerificationStateEnum.AUTO_APPROVED] },
         },
         orderBy: { createdAt: "asc" },
@@ -228,8 +230,12 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
       // Profile still renders without them
     }
   }
-  const listedServices = summariseListedServices(extraRows);
+  // A product line the site also describes like a service shows once, under Products.
+  const listedProducts = summariseListedServices(extraRows, 40, "PRODUCT_LISTED");
+  const listedServices = summariseListedServices(extraRows, 60, "SERVICE_LISTED", listedProducts.names);
+  const listedCerts = summariseListedServices(extraRows, 30, "CERTIFICATION_LISTED");
   const socialLinks = pickSocialLinks(extraRows);
+  const hours = summariseHours(extraRows);
   const sortedContacts = [...supplier.contacts].sort((a, b) => contactOrder(a.name) - contactOrder(b.name));
 
   const contactConfidence = calculateContactConfidence(
@@ -339,25 +345,42 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
         <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
           <ListChecks className="w-4 h-4 text-atlantic-600" />
-          Services Listed on Their Website
+          Services & Products Listed on Their Website
         </h3>
-        {listedServices.names.length === 0 ? (
+        {listedServices.names.length === 0 && listedProducts.names.length === 0 ? (
           <p className="text-xs text-slate-500 italic">
             No services list found on their website yet. See the capabilities below, or visit their site.
           </p>
         ) : (
           <>
-            <ul className="flex flex-wrap gap-2">
-              {listedServices.names.map((name) => (
-                <li key={name} className="px-3 py-1.5 text-xs font-medium text-slate-800 bg-slate-50 border border-slate-200 rounded-lg">
-                  {name}
-                </li>
-              ))}
-            </ul>
-            {listedServices.sources.length > 0 && (
+            {listedServices.names.length > 0 && (
+              <div className="space-y-2">
+                {listedProducts.names.length > 0 && <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Services</h4>}
+                <ul className="flex flex-wrap gap-2">
+                  {listedServices.names.map((name) => (
+                    <li key={name} className="px-3 py-1.5 text-xs font-medium text-slate-800 bg-slate-50 border border-slate-200 rounded-lg">
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {listedProducts.names.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Products</h4>
+                <ul className="flex flex-wrap gap-2">
+                  {listedProducts.names.map((name) => (
+                    <li key={name} className="px-3 py-1.5 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-lg">
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {[...listedServices.sources, ...listedProducts.sources].length > 0 && (
               <p className="text-[11px] text-slate-500">
                 Source:{" "}
-                {listedServices.sources.map((src, i) => (
+                {[...new Set([...listedServices.sources, ...listedProducts.sources])].slice(0, 3).map((src, i) => (
                   <span key={src}>
                     {i > 0 && ", "}
                     <a href={src} target="_blank" rel="noopener noreferrer" className="hover:text-atlantic-600 hover:underline">
@@ -411,8 +434,34 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
             Certifications & Standards
           </h3>
 
+          {listedCerts.names.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Standards & memberships they list</h4>
+              <ul className="flex flex-wrap gap-2">
+                {listedCerts.names.map((name) => (
+                  <li key={name} className="px-2.5 py-1 text-xs text-slate-800 bg-amber-50 border border-amber-200 rounded-md">
+                    {name}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-slate-500">
+                As stated by the company on their website, not verified by AtlanticSource
+                {listedCerts.sources[0] && (
+                  <>
+                    {" "}(
+                    <a href={listedCerts.sources[0]} target="_blank" rel="noopener noreferrer" className="hover:text-atlantic-600 hover:underline">
+                      {shortUrl(listedCerts.sources[0])}
+                    </a>
+                    )
+                  </>
+                )}
+                . Ask for certificates before relying on them.
+              </p>
+            </div>
+          )}
+
           {supplier.certifications.length === 0 ? (
-            <p className="text-xs text-slate-500 italic">No certifications listed.</p>
+            listedCerts.names.length === 0 && <p className="text-xs text-slate-500 italic">No certifications listed.</p>
           ) : (
             <div className="space-y-3">
               {supplier.certifications.map((cert: ProfileCertification) => (
@@ -595,6 +644,25 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
                       {sourceLink(con.sourceDocument?.sourceUrl)}
                     </div>
                   ))}
+                </div>
+              )}
+
+              {(hours.length > 0 || contactPage) && (
+                <div className="flex flex-wrap items-start gap-x-6 gap-y-2 text-xs text-slate-600">
+                  {hours.length > 0 && (
+                    <div className="flex items-start gap-2">
+                      <Clock className="w-4 h-4 text-atlantic-600 flex-shrink-0" />
+                      <span>
+                        <strong className="text-slate-800">Hours:</strong> {hours.join(" · ")}
+                      </span>
+                    </div>
+                  )}
+                  {contactPage && (
+                    <a href={contactPage} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-atlantic-600 hover:underline">
+                      Their contact page
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
                 </div>
               )}
 

@@ -46,6 +46,22 @@ const IGNORED_PATH_PATTERNS = [
   /\/(?:collections|product|products|shop|store)\/[^/]+/i,
 ];
 
+/**
+ * Full-site crawl: skip only what is never a company page (files, logins, carts, feeds,
+ * legal pages, tag/archive listings and the French copy of the site). Blog, news, careers,
+ * product and project pages ARE read.
+ */
+const FULL_CRAWL_IGNORED = [
+  /\/(?:login|signin|sign-in|signup|register|my-account|account|logout|search|cart|checkout|basket|wishlist|compare)(?:\/|$|\?)/i,
+  /\/(?:tag|tags|category|categories|author|archives?)\//i,
+  /\/page\/\d+/i,
+  /\.(?:pdf|zip|rar|png|jpe?g|gif|webp|svg|ico|mp[34]|mov|avi|wmv|docx?|xlsx?|pptx?|ics|xml|json|rss|css|js|dwg|dxf|stp|step|exe|dmg)$/i,
+  /\/(?:wp-login|wp-admin|wp-json|wp-content|wp-includes|feed|xmlrpc|cdn-cgi)(?:\/|$|\.)/i,
+  /\/(?:privacy|terms|cookie|legal|disclaimer|accessibility)(?:[-_/]|$)/i,
+  /\/(?:fr|fr-ca|fr_ca|es)(?:\/|$)/i,
+  /\/(?:print|share|email-protection)(?:\/|$)/i,
+];
+
 /** Same-site key: www/non-www, trailing slash and index pages count as one page. */
 function dedupeKey(url: string): string {
   try {
@@ -109,7 +125,11 @@ export function classifyUrl(urlStr: string, anchorText: string = ""): PageClassi
   const textHas = (rx: RegExp) => rx.test(textLower);
 
   if (pathHas("about", "company", "who", "history") || textHas(/\babout\b/)) return "ABOUT";
-  if (pathHas("service") || textHas(/\bservices?\b/)) return "SERVICES";
+  // A folder named for services (/services, /our-services, /products-services), not a product
+  // whose name contains the word ("/Extreme-Service-Dig-Bucket").
+  const segments = path.split("/").filter(Boolean);
+  const serviceFolder = segments.some((seg) => /^(?:our-)?(?:[a-z]+-)?services?(?:-|$)/.test(seg) && seg.split("-").length <= 3);
+  if (serviceFolder || textHas(/^(?:our\s+)?services?$/)) return "SERVICES";
   if (pathHas("capabilit", "expertise", "specialt", "what") || textHas(/\bcapabilit/)) return "CAPABILITIES";
   if (pathHas("product") || textHas(/\bproducts?\b/)) return "PRODUCTS";
   if (pathHas("industr", "markets", "sectors") || textHas(/\bindustr/)) return "INDUSTRIES";
@@ -186,4 +206,106 @@ export function discoverHighValueLinks(
   });
 
   return sortedLinks.slice(0, maxPages);
+}
+
+/** Query strings that only re-sort or filter a listing, not new content. */
+const NOISE_QUERY = /[?&](?:sort|order|orderby|filter|view|lang|replytocom|share|print|add-to-cart|s|q|p|page_id|attachment_id|sector|subsector|category|type|tag)=/i;
+
+export function isCrawlableSameSiteUrl(url: string, siteUrl: string): boolean {
+  if (!/^https?:/i.test(url) || !isSameRegistrableDomain(url, siteUrl)) return false;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  // Filtered listings ("?sector=x&company=0&content=") repeat pages already read.
+  if (NOISE_QUERY.test(u.search) || [...u.searchParams.keys()].length >= 2) return false;
+  return !FULL_CRAWL_IGNORED.some((p) => p.test(u.pathname));
+}
+
+export function crawlKey(url: string): string {
+  return dedupeKey(url);
+}
+
+/** Crawl order: contact and service pages first, product/news pages last, shallow before deep. */
+const CRAWL_PRIORITY: PageClassification[] = [
+  "CONTACT",
+  "LOCATION",
+  "SERVICES",
+  "CAPABILITIES",
+  "ABOUT",
+  "EQUIPMENT",
+  "CERTIFICATIONS",
+  "INDUSTRIES",
+  "HOME",
+  "OTHER",
+  "PROJECTS",
+  "PRODUCTS",
+];
+
+export function crawlPriority(link: DiscoveredLink): number {
+  const depth = (() => {
+    try {
+      return new URL(link.url).pathname.split("/").filter(Boolean).length;
+    } catch {
+      return 9;
+    }
+  })();
+  return CRAWL_PRIORITY.indexOf(link.classification) * 100 + depth;
+}
+
+/** Every same-site page linked from this page (menus, footers and body), for a full-site crawl. */
+export function discoverAllSiteLinks(html: string, pageUrl: string, siteUrl: string = pageUrl): DiscoveredLink[] {
+  const $ = cheerio.load(html);
+  const found = new Map<string, DiscoveredLink>();
+  $("a[href], area[href], link[rel=alternate][hreflang=en][href]").each((_, el) => {
+    const href = $(el).attr("href");
+    if (!href || /^(?:mailto|tel|javascript|data):/i.test(href.trim())) return;
+    const normalized = normalizeUrl(href, pageUrl);
+    if (!normalized || !isCrawlableSameSiteUrl(normalized, siteUrl)) return;
+    const key = dedupeKey(normalized);
+    if (found.has(key)) return;
+    const anchorText = $(el).text().replace(/\s+/g, " ").trim();
+    found.set(key, { url: normalized, classification: classifyUrl(normalized, anchorText), anchorText });
+  });
+  return [...found.values()];
+}
+
+/** Page addresses listed in a sitemap.xml (or the child sitemaps of a sitemap index). */
+export function parseSitemap(xml: string): { pages: string[]; childSitemaps: string[] } {
+  const locs = [...xml.matchAll(/<loc>\s*(?:<!\[CDATA\[)?\s*([^<\]\s]+)\s*(?:\]\]>)?\s*<\/loc>/gi)].map((m) => (m[1] || "").replace(/&amp;/g, "&"));
+  const isIndex = /<sitemapindex[\s>]/i.test(xml);
+  return isIndex ? { pages: [], childSitemaps: locs } : { pages: locs, childSitemaps: [] };
+}
+
+/**
+ * Page groups that are often most of a big site but add little (news, jobs, product
+ * catalogues, project galleries, deep unclassified pages). The crawl reads a sample of
+ * each instead of all of them.
+ */
+export type LowValueBucket = "NEWS" | "CAREERS" | "PRODUCTS" | "PROJECTS" | "DEEP_OTHER";
+
+export const LOW_VALUE_PAGE_BUDGET: Record<LowValueBucket, number> = {
+  NEWS: 5,
+  CAREERS: 2,
+  PRODUCTS: 15,
+  PROJECTS: 8,
+  DEEP_OTHER: 30,
+};
+
+export function lowValueBucket(link: DiscoveredLink): LowValueBucket | null {
+  let path = "";
+  try {
+    path = new URL(link.url).pathname.toLowerCase();
+  } catch {
+    return null;
+  }
+  const segments = path.split("/").filter(Boolean);
+  if (segments.some((s) => /^(?:blog|blogs|news|press|press-releases|media|events?|articles?|posts?|stories|insights|updates|newsroom)$/.test(s)) && segments.length >= 2) return "NEWS";
+  if (segments.some((s) => /^(?:careers?|jobs?|employment|join-our-team|work-with-us|opportunities)$/.test(s))) return "CAREERS";
+  if (link.classification === "PRODUCTS" && segments.length >= 2) return "PRODUCTS";
+  if (link.classification === "PROJECTS" && segments.length >= 2) return "PROJECTS";
+  if (link.classification === "OTHER" && segments.length >= 3) return "DEEP_OTHER";
+  return null;
 }

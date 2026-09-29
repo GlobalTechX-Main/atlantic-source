@@ -13,15 +13,27 @@ export interface ListedServices {
   sources: string[];
 }
 
+/** Word-order-free key: "Commercial/Industrial Doors" and "Industrial / Commercial Doors" match. */
+function displayKey(name: string): string {
+  return serviceKey(name).split(" ").filter(Boolean).sort().join(" ");
+}
+
 /** One entry per service (spelling variants merged), in the order the site lists them. */
-export function summariseListedServices(rows: PublishedClaimRow[], limit = 40): ListedServices {
+export function summariseListedServices(
+  rows: PublishedClaimRow[],
+  limit = 60,
+  claimType: "SERVICE_LISTED" | "PRODUCT_LISTED" | "CERTIFICATION_LISTED" = "SERVICE_LISTED",
+  /** Names already shown in another list (e.g. products), left out of this one. */
+  exclude: string[] = []
+): ListedServices {
+  const excluded = new Set(exclude.map(displayKey));
   const names: string[] = [];
   const seen = new Set<string>();
   const sources: string[] = [];
   for (const r of rows) {
-    if (r.claimType !== "SERVICE_LISTED") continue;
-    const k = serviceKey(r.rawValue);
-    if (seen.has(k)) continue;
+    if (r.claimType !== claimType) continue;
+    const k = displayKey(r.rawValue);
+    if (seen.has(k) || excluded.has(k)) continue;
     seen.add(k);
     if (names.length < limit) names.push(r.rawValue);
     if (r.sourceUrl && !sources.includes(r.sourceUrl) && sources.length < 3) sources.push(r.sourceUrl);
@@ -81,4 +93,19 @@ export function contactOrder(name: string | null | undefined): number {
   const other = /^Other Contact (\d+)/.exec(name);
   if (other) return 10 + Number(other[1]);
   return 50;
+}
+
+/** Opening hours lines as written on the site, duplicates removed. */
+export function summariseHours(rows: PublishedClaimRow[], limit = 4): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (r.claimType !== "BUSINESS_HOURS") continue;
+    const k = r.rawValue.toLowerCase().replace(/\s+/g, " ");
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r.rawValue);
+    if (out.length >= limit) break;
+  }
+  return out;
 }

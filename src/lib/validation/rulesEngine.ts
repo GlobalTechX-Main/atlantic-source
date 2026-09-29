@@ -1,5 +1,9 @@
 import { ValidationInput, ValidationResult } from "./types";
 
+/** Wording that says the company holds a certification ("We are ISO 9001 registered"). */
+const CERT_CLAIM_WORDS =
+  /\b(?:certified|certification|certificate|certifications|registered|registration|accredited|accreditation|compliant|compl(?:y|ies|iance)|meets?|approved|qualified|holds?|maintains?|received|achieved|earned|obtained|awarded|member|recogni[sz]ed|audited|W47\.1|W59|COR\s+(?:holder|certified|program))\b/i;
+
 const PROMPT_INJECTION_PATTERNS = [
   /ignore\s+(all\s+)?(previous\s+)?instructions/i,
   /system\s+prompt/i,
@@ -104,6 +108,26 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
       evidenceSupported: false,
       validatorVersion: "1.2.0",
       validatorActor: "RULE_ENGINE:WEAK_CERTIFICATION_MENTION",
+    };
+  }
+
+  // 3c. A certification only named in passing ("ISO 9001" in a news item or a list of
+  // standards) with no wording that the company holds it: drop it instead of queuing it.
+  if (
+    input.claimType === "CERTIFICATION" &&
+    // On the company's own certifications/quality page a plain list of standards is a claim.
+    input.pageType !== "CERTIFICATIONS" &&
+    !CERT_CLAIM_WORDS.test(input.evidenceText.replace(/Matched certification reference in sentence:/gi, "")) &&
+    !/image_alt|logo/i.test(`${input.evidenceText} ${input.surroundingContext || ""}`)
+  ) {
+    return {
+      decision: "REJECT",
+      confidence: 0.8,
+      risk: "LOW",
+      reason: "Certification named without saying the company holds it (no 'certified', 'registered', 'accredited' or similar)",
+      evidenceSupported: false,
+      validatorVersion: "1.3.0",
+      validatorActor: "RULE_ENGINE:CERTIFICATION_NO_CLAIM",
     };
   }
 
@@ -474,8 +498,23 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
     };
   }
 
-  // 8b. Services named on the company's own site (menu links, service pages, services-page headings)
-  if (input.claimType === "SERVICE_LISTED") {
+  // 8a. Standards and memberships the company lists on its own certifications page. Shown on
+  // the profile labelled "as stated by the company, not verified" (owner decision, see
+  // AGENTS.md rule 4). Official certifications (CERTIFICATION) still need a person.
+  if (input.claimType === "CERTIFICATION_LISTED") {
+    return {
+      decision: "APPROVE",
+      confidence: input.extractionConfidence,
+      risk: "LOW",
+      reason: "Listed on the company's own certifications page; shown as stated by the company, not verified",
+      evidenceSupported: true,
+      validatorVersion: "1.1.0",
+      validatorActor: "RULE_ENGINE:LISTED_CERTIFICATION",
+    };
+  }
+
+  // 8b. Services and product lines named on the company's own site (menu links, service pages, headings)
+  if (input.claimType === "SERVICE_LISTED" || input.claimType === "PRODUCT_LISTED") {
     if (input.extractionConfidence >= 0.85) {
       return {
         decision: "APPROVE",
@@ -498,13 +537,13 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
     };
   }
 
-  // 8c. Social media pages linked from the company's own site
-  if (input.claimType === "SOCIAL") {
+  // 8c. Social media pages and opening hours from the company's own site
+  if (input.claimType === "SOCIAL" || input.claimType === "BUSINESS_HOURS") {
     return {
       decision: "APPROVE",
       confidence: 0.9,
       risk: "LOW",
-      reason: "Company social media page linked from its own website",
+      reason: input.claimType === "SOCIAL" ? "Company social media page linked from its own website" : "Opening hours written on the company's own website",
       evidenceSupported: true,
       validatorVersion: "1.0.0",
       validatorActor: "RULE_ENGINE:SOCIAL_LINK",

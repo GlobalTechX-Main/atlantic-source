@@ -24,7 +24,7 @@ export interface FetchResult {
 const DEFAULT_MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 const DEFAULT_TIMEOUT = 10000;
 const DEFAULT_MAX_REDIRECTS = 6;
-const DEFAULT_ALLOWED_MIME_TYPES = ["text/html", "application/xhtml+xml", "text/plain", "application/xml"];
+const DEFAULT_ALLOWED_MIME_TYPES = ["text/html", "application/xhtml+xml", "text/plain", "application/xml", "text/xml"];
 const USER_AGENT = "AtlanticSourceBot/1.0 (+https://atlanticsource.ca/bot)";
 
 export async function safeFetch(

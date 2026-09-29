@@ -11,8 +11,14 @@ export interface ExtractedClaimCandidate {
     | "CONTACT"
     /** A service named on the company's own site, in its own words ("Heavy Lift & Rigging"). */
     | "SERVICE_LISTED"
+    /** A product line named on the company's own site ("Fire Rated Doors"). */
+    | "PRODUCT_LISTED"
+    /** A standard, certification or membership the company lists on its own site ("UL 10C", "DHI"). Always reviewed. */
+    | "CERTIFICATION_LISTED"
     /** The company's own social media page (rawValue = URL). */
-    | "SOCIAL";
+    | "SOCIAL"
+    /** Opening hours as written on the site ("Monday – Friday: 8:00 AM – 5:00 PM"). */
+    | "BUSINESS_HOURS";
   rawValue: string;
   normalizedValue?: string;
   evidenceText: string;
@@ -56,6 +62,13 @@ export interface ExtractorInput {
   pageType?: string;
   /** Web links on the page (menus and footer included) with their text. */
   links?: { href: string; text: string }[];
+  /** Dropdown / mega-menu groups with the labels above them (see parser). */
+  menuGroups?: { trail: string[]; links: { href: string; text: string }[] }[];
+  /**
+   * When this page is one of a set of sibling pages (/x/heavy-lift, /x/rigging, …) whose
+   * content reads like services, products or projects, which one (see pipeline).
+   */
+  collectionKind?: "SERVICE" | "PRODUCT" | "PROJECT";
 }
 
 export interface BaseExtractor {

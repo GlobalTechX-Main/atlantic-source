@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { CrawlStatusEnum, SourceTypeEnum, VerificationStateEnum } from "@prisma/client";
 import { safeFetch } from "@/lib/crawler/fetcher";
-import { crawlSite, toExtractorInput, withRetry, DEFAULT_MAX_SUBPAGES } from "@/lib/crawler/pipeline";
+import { crawlSite, toExtractorInput, withRetry, DEFAULT_MAX_PAGES } from "@/lib/crawler/pipeline";
 import { ExtractionEngine } from "@/lib/extraction/engine";
 import { logger } from "@/lib/logger";
 
@@ -86,7 +86,8 @@ async function markFailed(crawlRunId: string, errorSummary: string, extra: { pag
 
 export async function processNextCrawlJob(options: ProcessJobOptions = {}): Promise<ProcessJobResult> {
   // 0. Recover any stale RUNNING jobs before claiming next job
-  await recoverStaleCrawlJobs(5);
+  // A whole-site crawl can take several minutes, so only jobs stuck for 30+ minutes are reset.
+  await recoverStaleCrawlJobs(30);
 
   // 1. Find the requested job, or the oldest PENDING job
   const pendingJob = await db.crawlRun.findFirst({
@@ -129,7 +130,8 @@ export async function processNextCrawlJob(options: ProcessJobOptions = {}): Prom
       supplierDomain,
       // Integration tests replace safeFetch with a mock, so look it up at call time.
       withRetry((url) => safeFetch(url), process.env.NODE_ENV === "test" ? [] : [2000, 6000]),
-      options.maxSubpages ?? DEFAULT_MAX_SUBPAGES
+      options.maxSubpages ?? (Number(process.env.CRAWL_MAX_PAGES) || DEFAULT_MAX_PAGES),
+      process.env.NODE_ENV === "test" ? { concurrency: 1, useSitemap: false } : { concurrency: 4, delayMs: 100 }
     );
 
     const counts = {

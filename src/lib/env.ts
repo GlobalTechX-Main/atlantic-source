@@ -27,6 +27,10 @@ const envSchema = z.object({
   AI_REVIEW_ENABLED: z.enum(["true", "false"]).default("false"),
   OPENAI_API_KEY: z.string().optional(),
   AI_REVIEW_MODEL: z.string().default("gpt-4o-mini"),
+  // Most pages the crawler reads per supplier website (the whole site up to this limit).
+  CRAWL_MAX_PAGES: z.coerce.number().int().min(1).max(2000).default(150),
+  // How many supplier websites the bulk re-crawl script reads at the same time.
+  CRAWL_PARALLEL_SUPPLIERS: z.coerce.number().int().min(1).max(20).default(5),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -50,6 +54,8 @@ function parseEnv(): Env {
         AUTO_PUBLISH_LOW_RISK_FACTS: "false",
         AI_REVIEW_ENABLED: "false",
         AI_REVIEW_MODEL: "gpt-4o-mini",
+        CRAWL_MAX_PAGES: 150,
+        CRAWL_PARALLEL_SUPPLIERS: 5,
       };
     }
     throw new Error("Invalid environment configuration");

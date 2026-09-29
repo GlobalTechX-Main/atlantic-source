@@ -1,10 +1,10 @@
 import { ContactTypeEnum, ProvenanceTypeEnum, VerificationStateEnum } from "@prisma/client";
 import { db } from "@/lib/db";
 import { isUsableRfqEmail, isUsableRfqPhone } from "./usability";
-import { officeForPhone, isHomeOffice } from "./office";
+import { officeForPhone, isHomeOffice, departmentForPhone, officeFromSourceUrl, townBeforePhone, regionForAreaCode } from "./office";
 
 /** Most contacts kept per supplier: the three RFQ contacts plus other office lines and emails. */
-export const MAX_CONTACTS = 12;
+export const MAX_CONTACTS = 20;
 
 /** NB 506/428, NS and PEI 902/782, NL 709/879. */
 const ATLANTIC_AREA_CODES = new Set(["506", "428", "902", "782", "709", "879"]);
@@ -22,6 +22,8 @@ export interface RankedContactCandidate {
   sourceDocumentId?: string | null;
   /** Town of the office this phone number belongs to, when the page says ("Moncton"). */
   office?: string | null;
+  /** What the number is for, when the page says ("Parts", "24/7 emergency"). */
+  department?: string | null;
 }
 
 export interface ContactSelectionOptions {
@@ -29,6 +31,8 @@ export interface ContactSelectionOptions {
   homeCity?: string | null;
   /** Finds the office a phone number belongs to (usually from the page it was found on). */
   officeOf?: (claim: { rawValue: string; normalizedValue: string | null; sourceDocumentId?: string | null; evidenceText?: string | null }) => string | null;
+  /** Finds what a phone number is for (sales, parts, 24/7...). */
+  departmentOf?: (claim: { rawValue: string; normalizedValue: string | null; sourceDocumentId?: string | null; evidenceText?: string | null }) => string | null;
 }
 
 export interface SupplierRfqSelectionResult {
@@ -248,6 +252,7 @@ export function selectRfqContactsFromClaims(
     let score = evalResult.score;
     let reason = evalResult.reason;
     const office = isPhone && options.officeOf ? options.officeOf(c) : null;
+    const department = isPhone && options.departmentOf ? options.departmentOf(c) : null;
     if (office && options.homeCity) {
       if (isHomeOffice(office, options.homeCity)) {
         // The branch in the city the supplier is listed under is the one a buyer expects.
@@ -270,6 +275,7 @@ export function selectRfqContactsFromClaims(
       selectionReason: reason,
       sourceDocumentId: c.sourceDocumentId,
       office,
+      department,
     });
   }
 
@@ -350,15 +356,21 @@ export async function applySupplierRfqContactSelection(supplierCompanyId: string
   // Page text for each source page, to tell which office a phone number belongs to.
   const docIds = [...new Set(claims.map((c) => c.sourceDocumentId).filter((id): id is string => Boolean(id)))];
   const docs = docIds.length
-    ? await db.sourceDocument.findMany({ where: { id: { in: docIds } }, select: { id: true, extractedText: true } })
+    ? await db.sourceDocument.findMany({ where: { id: { in: docIds } }, select: { id: true, extractedText: true, sourceUrl: true } })
     : [];
   const textByDoc = new Map(docs.map((d) => [d.id, d.extractedText]));
+  const urlByDoc = new Map(docs.map((d) => [d.id, d.sourceUrl]));
 
   const selection = selectRfqContactsFromClaims(claims, domain, {
     homeCity: supplier.locations[0]?.city ?? null,
     officeOf: (c) =>
       officeForPhone(c.sourceDocumentId ? textByDoc.get(c.sourceDocumentId) : null, c.normalizedValue || c.rawValue) ??
-      officeForPhone(c.evidenceText, c.normalizedValue || c.rawValue),
+      officeForPhone(c.evidenceText, c.normalizedValue || c.rawValue) ??
+      // The page itself is about one office (/locations/bishops-falls), or the address before
+      // the number names a town we do not have in our list.
+      officeFromSourceUrl(c.sourceDocumentId ? urlByDoc.get(c.sourceDocumentId) : null) ??
+      townBeforePhone(c.sourceDocumentId ? textByDoc.get(c.sourceDocumentId) : null, c.normalizedValue || c.rawValue),
+    departmentOf: (c) => departmentForPhone(c.sourceDocumentId ? textByDoc.get(c.sourceDocumentId) : null, c.normalizedValue || c.rawValue),
   });
 
   // Clear existing materialized contacts for this supplier
@@ -392,7 +404,10 @@ export async function applySupplierRfqContactSelection(supplierCompanyId: string
       data: {
         supplierCompanyId,
         name: nameLabel,
-        title: candidate.office ? `${candidate.office} office` : null,
+        // Every number gets a label: office and/or department, else the region its area code covers.
+        title:
+          [candidate.office ? `${candidate.office} office` : null, candidate.department].filter(Boolean).join(" · ") ||
+          (candidate.isPhone ? regionForAreaCode(candidate.normalizedValue) : null),
         publicBusinessEmail: email,
         normalizedEmail: email,
         publicBusinessPhone: phone,

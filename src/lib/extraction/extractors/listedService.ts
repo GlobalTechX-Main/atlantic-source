@@ -11,8 +11,15 @@ import { BaseExtractor, ExtractorInput, ExtractedClaimCandidate } from "../types
  *  2. Section headings on the company's services page.
  */
 
-/** A page for one service: /services/heavy-lift/ (exactly one level below the services folder). */
-const SERVICE_HUB = /\/(?:our-)?(?:services?|capabilities|what-we-do|solutions|expertise|specialties|specialities)\/([^/?#]+)\/?$/i;
+/**
+ * A page for one service: /services/heavy-lift/ (exactly one level below a services folder).
+ * The folder may carry a prefix: /custom-manufacturing-capabilities/cnc-machining/.
+ */
+const SERVICE_HUB =
+  /\/(?:[a-z0-9]+-){0,3}(?:services?|capabilities|what-we-do|solutions|expertise|specialties|specialities)\/([^/?#]+)\/?$/i;
+
+/** A page for one product line: /our-products/fire-rated-doors/, /products/hydraulic-cylinders/. */
+const PRODUCT_HUB = /\/(?:our-)?(?:products?|product-lines?|product-range)\/([^/?#]+)\/?$/i;
 
 /** Words that on their own are section titles, not services. */
 const GENERIC = new Set(
@@ -28,6 +35,7 @@ const GENERIC = new Set(
     "sustainability", "community", "innovation", "design", "manufacture", "support", "resources", "downloads",
     "privacy policy", "terms", "sitemap", "search", "menu", "login", "sign in", "english", "français", "francais",
     "service areas", "areas we serve", "proud members of", "certifications", "equipment", "our equipment", "fleet",
+    "details", "view details", "products", "our products", "all products", "view products", "shop now", "buy now", "brands", "new",
   ].map((s) => s.toLowerCase())
 );
 
@@ -39,7 +47,10 @@ const INDUSTRY_ONLY = /^(?:agriculture|aquaculture|fisheries|food(?: processing)
 const SERVICE_WORD = /\b(?:services?|repairs?|machining|fabrication|installation|maintenance|testing|inspection|design|engineering|welding|rentals?|transport(?:ation)?|towing|rigging|lifting|cutting|bending|plating|grinding|coating|painting|blasting|construction|demolition|paving|drilling|consulting|management|automation|programming|electrical|mechanical|plumbing|hvac|piping|assessment|analysis|monitoring|commissioning|support|removal|supply|manufacturing|assembly|training|calibration|cleaning|salvage|rescue|driving|excavation|surveying|planning|architecture|remediation|lighting|integration|contracting|upgrades?|retrofits?|panels?|systems?|shutdowns?|turnarounds?)\b/i;
 
 /** Marketing words, documents and language switches that are never a service name. */
-const NOT_A_SERVICE = /\b(?:great|premier|world[- ]class|proven|success|excellent|best|leading|trusted|award|brochure|flyer|fact sheet|line card|portal|a-z|news|fran[cç]ais|french|english|español|preventing|facility in)\b|@/i;
+const NOT_A_SERVICE =
+  /\b(?:great|premier|world[- ]class|proven|success|excellent|best|leading|trusted|award|brochure|flyer|fact sheet|line card|portal|a-z|news|fran[cç]ais|french|english|español|preventing|facility in|website|configurator|advantage|benefits of|roi)\b|@|_|[àâçéèêëîïôûùüÿœ]/i;
+/** Archive links ("April 2014") and bare years. */
+const DATE_LIKE = /^(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+)?(?:19|20)\d{2}$/i;
 const REGION_ONLY = /^(?:atlantic|atlantic canada|canada|maritimes|ontario|quebec|national|international|global)$/i;
 
 const PRONOUN = /\b(?:we|our|ours|you|your|us|i|my|me)\b/i;
@@ -56,7 +67,7 @@ function titleCase(s: string): string {
 }
 
 /** Cleans a candidate and returns it when it reads like a service name, else null. */
-export function cleanServiceName(raw: string): string | null {
+export function cleanServiceName(raw: string, options: { underServicesFolder?: boolean } = {}): string | null {
   const text = raw
     .replace(/[\s\u00a0\u200b]+/g, " ")
     .replace(/^[\s\-–—•·>»›|]+|[\s\-–—•·>»›|+]+$/g, "")
@@ -67,8 +78,10 @@ export function cleanServiceName(raw: string): string | null {
   if (words.length > 7) return null;
   if (/[?!.:;,]$/.test(text) || /^\d/.test(text) || !/[a-z]/i.test(text)) return null;
   if (/%%|[{}<>]/.test(text) || /^[a-z]/.test(text) || CALL_TO_ACTION.test(text)) return null;
-  if (INDUSTRY_ONLY.test(text) && !SERVICE_WORD.test(text)) return null;
-  if (NOT_A_SERVICE.test(text) || REGION_ONLY.test(text)) return null;
+  // "Marine" or "Mining" on its own is usually an industry list. But when the company files it
+  // under its own services folder (/services/marine/), it is how they name that service line.
+  if (!options.underServicesFolder && INDUSTRY_ONLY.test(text) && !SERVICE_WORD.test(text)) return null;
+  if (NOT_A_SERVICE.test(text) || REGION_ONLY.test(text) || DATE_LIKE.test(text) || /^['"‘’“”]/.test(text)) return null;
   if (/^[A-Z]$/.test(text)) return null;
   if (PRONOUN.test(text) || PLACE_OR_OFFICE.test(text)) return null;
   if ((text.match(FUNCTION_WORD) || []).length >= 2) return null;
@@ -97,21 +110,30 @@ function sameSite(href: string, pageUrl: string): boolean {
   }
 }
 
-const SERVICE_PAGE_URL = /\/(?:[a-z]{2}\/)?(?:our-)?(?:services?|capabilities|what-we-do|solutions|expertise|specialties|specialities)\/?$/i;
+/**
+ * Menu groups that are site housekeeping, not what the company sells: about, contact, jobs,
+ * news, projects, certifications, industries, fleet/equipment and so on. Everything else in
+ * a dropdown menu is treated as the company's own list of offerings, whatever it is called.
+ */
+const HOUSEKEEPING_MENU =
+  /\b(?:about|company|who we are|our story|history|team|leadership|management team|contact|careers?|jobs?|employment|join|news|blog|media|press|events?|resources|downloads?|investors?|log ?in|sign ?in|account|locations?|branches|offices?|faq|legal|privacy|polic(?:y|ies)|our work|projects?|case stud(?:y|ies)|portfolio|gallery|testimonials?|certif\w*|quality|affiliations?|accreditations?|industr(?:y|ies)|markets?|sectors?|clients?|customers?|partners?|community|sustainab\w*|safety|environment\w*|language|fleet|equipment|videos?|home|insights|supplier resources|customer resources|articles?|tips|learn|knowledge|library|guides?|hiring|postings?|opportunities|openings|positions|vacancies|français|francais|english)\b/i;
+const PRODUCT_MENU = /\b(?:products?|product lines?|catalog(?:ue)?|shop|store|brands?)\b/i;
+
+const SERVICE_PAGE_URL = /\/(?:[a-z0-9]+-){0,3}(?:services?|capabilities|what-we-do|solutions|expertise|specialties|specialities)\/?$/i;
 
 export class ListedServiceExtractor implements BaseExtractor {
   public name = "LISTED_SERVICE_EXTRACTOR";
 
   public async extract(input: ExtractorInput): Promise<ExtractedClaimCandidate[]> {
     const found = new Map<string, ExtractedClaimCandidate>();
-    const add = (name: string, evidence: string, locator: string, confidence: number) => {
-      const k = serviceKey(name);
+    const add = (name: string, evidence: string, locator: string, confidence: number, type: "SERVICE_LISTED" | "PRODUCT_LISTED" = "SERVICE_LISTED") => {
+      const k = `${type}:${serviceKey(name)}`;
       const prev = found.get(k);
       if (prev && prev.confidence >= confidence) return;
       found.set(k, {
-        claimType: "SERVICE_LISTED",
+        claimType: type,
         rawValue: name,
-        normalizedValue: k.replace(/ /g, "-"),
+        normalizedValue: serviceKey(name).replace(/ /g, "-"),
         evidenceText: evidence,
         evidenceLocator: locator,
         extractionMethod: ExtractionMethodEnum.PAGE_STRUCTURE,
@@ -128,11 +150,64 @@ export class ListedServiceExtractor implements BaseExtractor {
       } catch {
         continue;
       }
-      const m = SERVICE_HUB.exec(path);
-      if (!m) continue;
-      const name = cleanServiceName(link.text);
+      const isService = SERVICE_HUB.test(path);
+      const isProduct = !isService && PRODUCT_HUB.test(path);
+      if (!isService && !isProduct) continue;
+      const name = cleanServiceName(link.text, { underServicesFolder: true });
       if (!name) continue;
-      add(name, `Link to the company's service page "${name}" → ${link.href}`, "SERVICE_PAGE_LINK", 0.9);
+      // Catalogue items with model numbers ("Breaker Qo 15a 1p 120v") are single products, not product lines.
+      if (isProduct && name.split(" ").some((w) => /\d/.test(w))) continue;
+      if (isService) add(name, `Link to the company's service page "${name}" → ${link.href}`, "SERVICE_PAGE_LINK", 0.9);
+      else add(name, `Link to the company's product page "${name}" → ${link.href}`, "PRODUCT_PAGE_LINK", 0.9, "PRODUCT_LISTED");
+    }
+
+    // 1b. Dropdown / mega-menu groups, read by structure instead of by folder name: a group of
+    //     links under a menu item that is not housekeeping is the company's list of offerings.
+    for (const group of input.menuGroups || []) {
+      if (group.trail.length === 0) continue; // the top menu bar itself only names site sections
+      if (group.trail.some((label) => HOUSEKEEPING_MENU.test(label))) continue;
+      const sameSiteLinks = group.links.filter((l) => sameSite(l.href, input.sourceUrl));
+      if (sameSiteLinks.length < 2 || sameSiteLinks.length < group.links.length * 0.6) continue;
+      // An item that is itself a housekeeping page ("Contacts", "Health & Safety") is dropped,
+      // and a group made mostly of them is an "about us" menu, not a list of offerings.
+      const housekeepingItems = sameSiteLinks.filter((l) => HOUSEKEEPING_MENU.test(l.text) && !SERVICE_WORD.test(l.text)).length;
+      if (housekeepingItems / sameSiteLinks.length > 0.4) continue;
+      const names = sameSiteLinks
+        .filter((l) => !(HOUSEKEEPING_MENU.test(l.text) && !SERVICE_WORD.test(l.text)))
+        .map((l) => cleanServiceName(l.text));
+      const good = names.filter((n): n is string => Boolean(n));
+      // Mostly real names (not "Capabilities / Our Work / Certifications" section links).
+      if (good.length < 2 || good.length / sameSiteLinks.length < 0.6) continue;
+      const isProduct = group.trail.some((label) => PRODUCT_MENU.test(label));
+      const where = group.trail.join(" › ");
+      for (const name of good) {
+        if (isProduct && name.split(" ").some((w) => /\d/.test(w))) continue;
+        add(
+          name,
+          `Listed in the site menu under "${where}" on ${input.sourceUrl}`,
+          "MENU_GROUP",
+          0.85,
+          isProduct ? "PRODUCT_LISTED" : "SERVICE_LISTED"
+        );
+      }
+    }
+
+    // 1c. This page is one of a set of sibling pages that read like services or products:
+    //     its own main heading names one offering.
+    if (input.collectionKind === "SERVICE" || input.collectionKind === "PRODUCT") {
+      const h1 = input.headings.find((h) => h.level === "h1")?.text;
+      const titleName = (input.pageTitle || "").split(/\s+(?:[|–—-]|::)\s+/)[0];
+      const rawName = (h1 || titleName || "").split(/\s+(?:[|–—]|::)\s+/)[0] || "";
+      const name = HOUSEKEEPING_MENU.test(rawName) && !SERVICE_WORD.test(rawName) ? null : cleanServiceName(rawName);
+      if (name) {
+        add(
+          name,
+          `Page ${input.sourceUrl} is one of several similar pages that describe ${input.collectionKind === "SERVICE" ? "services" : "products"}`,
+          "PAGE_COLLECTION",
+          0.85,
+          input.collectionKind === "SERVICE" ? "SERVICE_LISTED" : "PRODUCT_LISTED"
+        );
+      }
     }
 
     // 2. The services page: its section headings name the services. A page for one
@@ -148,7 +223,7 @@ export class ListedServiceExtractor implements BaseExtractor {
       !isOneServicePage && (input.pageType === "SERVICES" || input.pageType === "CAPABILITIES" || SERVICE_PAGE_URL.test(path));
     if (isOneServicePage) {
       const h1 = input.headings.find((h) => h.level === "h1");
-      const name = h1 ? cleanServiceName(h1.text) : null;
+      const name = h1 ? cleanServiceName(h1.text, { underServicesFolder: true }) : null;
       if (name) add(name, `Main heading of the service page ${input.sourceUrl}: "${h1!.text.trim()}"`, "SERVICE_PAGE_TITLE", 0.9);
     } else if (isServicesHub) {
       for (const h of input.headings) {
@@ -182,6 +257,7 @@ export class ListedServiceExtractor implements BaseExtractor {
       flush();
     }
 
-    return [...found.values()].slice(0, 40);
+    const all = [...found.values()];
+    return [...all.filter((c) => c.claimType === "SERVICE_LISTED").slice(0, 40), ...all.filter((c) => c.claimType === "PRODUCT_LISTED").slice(0, 40)];
   }
 }

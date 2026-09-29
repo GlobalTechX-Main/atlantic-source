@@ -21,10 +21,69 @@ export interface ExtractedPageContent {
   telLinks: string[];
   /** Every web link on the page (menus and footer included), absolute URL plus its text. */
   links: { href: string; text: string }[];
+  /**
+   * Dropdown / mega-menu groups: a list of links plus the labels above it, outermost first
+   * (["Steel Door Manufacturing", "Our Products"] → Fire Rated Doors, Security Doors, …).
+   */
+  menuGroups: MenuGroup[];
   /** SHA-256 of the raw HTML. */
   contentHash: string;
   /** SHA-256 of the normalized main content, used to spot the same page at two URLs. */
   contentFingerprint: string;
+}
+
+export interface MenuGroup {
+  trail: string[];
+  links: { href: string; text: string }[];
+}
+
+const MENU_SCOPE = "nav, header, [role=navigation], [class*=menu], [class*=nav], [id*=menu], [id*=nav], [class*=dropdown], [class*=mega]";
+
+function directLabel(el: cheerio.Cheerio<import("domhandler").Element>): string {
+  // The item's own text: its first link/label child, not the nested list under it.
+  const own = el.children("a, span, button, strong, h2, h3, h4, h5, h6, p, div").first();
+  const text = (own.length ? own.clone().children("ul, ol, div").remove().end().text() : "").replace(/\s+/g, " ").trim();
+  return text.slice(0, 80);
+}
+
+/** Reads menus as groups of links with the labels they sit under. */
+function readMenuGroups($: cheerio.CheerioAPI, pageUrl: string): MenuGroup[] {
+  const groups: MenuGroup[] = [];
+  const seen = new Set<string>();
+  $(MENU_SCOPE)
+    .find("ul, ol")
+    .each((_, listEl) => {
+      if (groups.length >= 80) return;
+      const list = $(listEl);
+      const links: { href: string; text: string }[] = [];
+      list.children("li").each((__, li) => {
+        const a = $(li).children("a[href]").first().length ? $(li).children("a[href]").first() : $(li).find("a[href]").first();
+        const rawHref = (a.attr("href") || "").trim();
+        const text = a.clone().children("ul, ol").remove().end().text().replace(/\s+/g, " ").trim();
+        if (!rawHref || !text || rawHref.startsWith("#") || /^(mailto|tel|javascript):/i.test(rawHref)) return;
+        try {
+          links.push({ href: new URL(rawHref, pageUrl).toString(), text: text.slice(0, 80) });
+        } catch {
+          // skip bad link
+        }
+      });
+      if (links.length < 2) return;
+
+      // Labels above this list: a column heading right before it, then each enclosing menu item.
+      const trail: string[] = [];
+      const heading = list.prevAll("a, span, strong, h2, h3, h4, h5, h6, p, div").first();
+      const headingText = heading.length ? heading.clone().children("ul, ol").remove().end().text().replace(/\s+/g, " ").trim() : "";
+      if (headingText && headingText.length <= 80) trail.unshift(headingText);
+      list.parents("li").each((__, li) => {
+        const label = directLabel($(li));
+        if (label && trail[0] !== label) trail.unshift(label);
+      });
+      const key = links.map((l) => l.href).join("|");
+      if (seen.has(key)) return;
+      seen.add(key);
+      groups.push({ trail, links });
+    });
+  return groups;
 }
 
 const NON_CONTENT_TAGS = "script, style, noscript, svg, iframe, template, canvas, video, audio, object, embed";
@@ -121,6 +180,8 @@ export function parseAndSanitizeHtml(html: string, pageUrl: string): ExtractedPa
     links.push({ href, text });
   });
 
+  const menuGroups = readMenuGroups($, pageUrl);
+
   // Full page (header and footer kept: addresses and phone numbers usually live there)
   $(NON_CONTENT_TAGS).remove();
   $(".cookie-banner, #cookie-banner, .privacy-policy-banner").remove();
@@ -185,6 +246,7 @@ export function parseAndSanitizeHtml(html: string, pageUrl: string): ExtractedPa
     mailtoLinks,
     telLinks,
     links,
+    menuGroups,
     contentHash,
     contentFingerprint,
   };

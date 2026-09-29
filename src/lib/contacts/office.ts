@@ -76,3 +76,114 @@ export function isHomeOffice(office: string | null, homeCity: string | null | un
   const towns = metroTowns(homeCity).map((t) => t.toLowerCase());
   return towns.includes(office.toLowerCase()) || office.toLowerCase() === homeCity.toLowerCase();
 }
+
+const DEPARTMENTS: { label: string; re: RegExp }[] = [
+  { label: "24/7 emergency", re: /\b(?:24\s*\/\s*7|24\s*hours?|emergency|after[\s-]?hours)\b/i },
+  { label: "Toll-free", re: /\btoll[\s-]?free\b/i },
+  { label: "Sales", re: /\bsales\b/i },
+  { label: "Service", re: /\bservice(?:\s+department)?\b/i },
+  { label: "Parts", re: /\bparts\b/i },
+  { label: "Estimating", re: /\b(?:estimating|quotes?)\b/i },
+  { label: "Dispatch", re: /\bdispatch\b/i },
+  { label: "Rentals", re: /\brentals?\b/i },
+  { label: "Shop", re: /\b(?:shop|plant|warehouse)\b/i },
+  { label: "Head office", re: /\b(?:head\s+office|corporate\s+office|headquarters)\b/i },
+];
+
+/**
+ * What the number is for, from the words just before it ("24/7 Parts: (506) 461-0480" →
+ * "24/7 emergency · Parts"). Returns null when the page gives no label.
+ */
+export function departmentForPhone(pageText: string | null | undefined, phone: string): string | null {
+  if (!pageText) return null;
+  const digits = phone.replace(/\D/g, "");
+  const digits10 = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (digits10.length !== 10) return null;
+  const text = pageText.replace(/\s+/g, " ");
+  const hit = phonePattern(digits10).exec(text);
+  if (!hit) return null;
+  // Only the label right before the number, and never past the previous number.
+  let before = text.slice(Math.max(0, hit.index - 40), hit.index);
+  const prev = [...before.matchAll(ANY_PHONE)].pop();
+  if (prev) before = before.slice((prev.index ?? 0) + prev[0].length).replace(/^\s*\([^)]*\)/, "");
+  // Cut at the end of the previous address or sentence.
+  before = before.split(/[.;|•]|\b[ABCE]\d[A-Z][ -]?\d[A-Z]\d\b/i).pop() || "";
+  const labels = DEPARTMENTS.filter((d) => d.re.test(before)).map((d) => d.label);
+  return labels.length ? labels.slice(0, 2).join(" · ") : null;
+}
+
+const PROVINCE_SLUGS: Record<string, string> = {
+  "new-brunswick": "New Brunswick",
+  "nova-scotia": "Nova Scotia",
+  "prince-edward-island": "Prince Edward Island",
+  pei: "Prince Edward Island",
+  newfoundland: "Newfoundland & Labrador",
+  "newfoundland-and-labrador": "Newfoundland & Labrador",
+  "newfoundland-labrador": "Newfoundland & Labrador",
+  labrador: "Labrador",
+  quebec: "Quebec",
+  ontario: "Ontario",
+  alberta: "Alberta",
+  "british-columbia": "British Columbia",
+  manitoba: "Manitoba",
+  saskatchewan: "Saskatchewan",
+};
+
+function titleFromSlug(slug: string): string {
+  return decodeURIComponent(slug)
+    .replace(/\.(?:html?|php|aspx?)$/i, "")
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((w) => (w.length <= 2 && /^(?:nb|ns|nl|pe)$/i.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+
+/**
+ * Office name from the page the number was found on: /locations/bishops-falls → "Bishops Falls",
+ * /new-brunswick → "New Brunswick". Null for pages that are not about one place.
+ */
+export function officeFromSourceUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let parts: string[];
+  try {
+    parts = new URL(url).pathname.toLowerCase().split("/").filter(Boolean);
+  } catch {
+    return null;
+  }
+  const last = parts[parts.length - 1];
+  if (!last) return null;
+  if (PROVINCE_SLUGS[last]) return PROVINCE_SLUGS[last]!;
+  const parent = parts[parts.length - 2];
+  if (parent && /^(?:locations?|branches|branch|offices?|stores?|dealers?|service-centres?|service-centers?|facilities)$/.test(parent)) {
+    return titleFromSlug(last);
+  }
+  return null;
+}
+
+/** Any town written as "Town, NB" / "Town NS" right before the number, even if not in our town list. */
+export function townBeforePhone(pageText: string | null | undefined, phone: string): string | null {
+  if (!pageText) return null;
+  const digits = phone.replace(/\D/g, "");
+  const digits10 = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (digits10.length !== 10) return null;
+  const text = pageText.replace(/\s+/g, " ");
+  const hit = phonePattern(digits10).exec(text);
+  if (!hit) return null;
+  let before = text.slice(Math.max(0, hit.index - 160), hit.index);
+  const prev = [...before.matchAll(ANY_PHONE)].pop();
+  if (prev) before = before.slice((prev.index ?? 0) + prev[0].length);
+  const towns = [...before.matchAll(/([A-Z][a-z'’]+(?:[ -](?:[A-Z][a-z'’]+|de|du|la))*),?\s+(?:NB|NS|PE|PEI|NL|N\.B\.|N\.S\.|New Brunswick|Nova Scotia|Newfoundland)\b/g)];
+  const town = towns.pop()?.[1];
+  return town && town.length <= 30 ? town : null;
+}
+
+/** Last-resort label from the area code, so no number is shown as just "Phone". */
+export function regionForAreaCode(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  const ac = (digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits).slice(0, 3);
+  if (TOLL_FREE.has(ac)) return "Toll-free line";
+  if (ac === "506" || ac === "428") return "New Brunswick line";
+  if (ac === "902" || ac === "782") return "Nova Scotia / PEI line";
+  if (ac === "709" || ac === "879") return "Newfoundland & Labrador line";
+  return "Out-of-province line";
+}

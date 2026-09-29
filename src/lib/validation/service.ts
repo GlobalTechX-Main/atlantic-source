@@ -104,6 +104,22 @@ export async function validateAndProcessSupplierClaims(
   stats.totalProcessed = unreviewedClaims.length;
 
   const canonicalFacts: CanonicalClaimFact[] = consolidateExtractedClaims(unreviewedClaims);
+
+  // Every earlier human decision for this supplier, loaded once instead of one query per fact.
+  const humanReviewed = new Map<string, Awaited<ReturnType<typeof db.extractedClaim.findFirst>>>();
+  for (const c of await db.extractedClaim.findMany({
+    where: {
+      supplierCompanyId,
+      OR: [
+        { reviewedByUserId: { not: null } },
+        { reviewState: { in: [VerificationStateEnum.HUMAN_APPROVED, VerificationStateEnum.HUMAN_REJECTED, VerificationStateEnum.VERIFIED, VerificationStateEnum.REJECTED] } },
+      ],
+    },
+    orderBy: { updatedAt: "desc" },
+  })) {
+    const k = `${c.claimType}|${c.normalizedValue ?? ""}`;
+    if (!humanReviewed.has(k)) humanReviewed.set(k, c);
+  }
   const aiConfig = aiReviewConfig();
   let aiCalls = 0;
   stats.uniqueCanonicalFacts = canonicalFacts.length;
@@ -163,17 +179,7 @@ export async function validateAndProcessSupplierClaims(
     }
 
     // Check if there is a prior human review decision for this supplier & canonical fact
-    const existingHumanReview = await db.extractedClaim.findFirst({
-      where: {
-        supplierCompanyId,
-        claimType: fact.claimType,
-        normalizedValue: fact.normalizedValue,
-        OR: [
-          { reviewedByUserId: { not: null } },
-          { reviewState: { in: ["HUMAN_APPROVED", "HUMAN_REJECTED", "VERIFIED", "REJECTED"] } }
-        ]
-      }
-    });
+    const existingHumanReview = humanReviewed.get(`${fact.claimType}|${fact.normalizedValue ?? ""}`) ?? null;
 
     let targetState = "HUMAN_REVIEW";
     let decisionToApply: string | null | undefined = validationResult.decision;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { officeForPhone, isHomeOffice } from "@/lib/contacts/office";
+import { officeForPhone, isHomeOffice, departmentForPhone } from "@/lib/contacts/office";
 import { selectRfqContactsFromClaims } from "@/lib/contacts/selection";
 
 // Shortened from a real Atlantic contact page.
@@ -80,5 +80,16 @@ describe("officeForPhone page layouts", () => {
   it("does not label an out-of-region number with the office before it", () => {
     const text = "Canada +1 (902) 469-3606 5 Notting Court Dartmouth, Nova Scotia B3B 1N2, Canada United States +1 (207) 645-4300";
     expect(officeForPhone(text, "2076454300")).toBeNull();
+  });
+});
+
+describe("departmentForPhone", () => {
+  it("reads the label right before a number", () => {
+    const text = "291 de Fiedmont St. Moncton, N.B. E1A 6N5 Moncton (506) 861-2572 24/7 Parts: (506) 872-2572";
+    expect(departmentForPhone(text, "5068722572")).toBe("24/7 emergency · Parts");
+    expect(departmentForPhone("Head office Toll-Free: 1-800-561-2726", "8005612726")).toBe("Toll-free · Head office");
+  });
+  it("does not take the label that belongs to the previous number", () => {
+    expect(departmentForPhone("contact us 877.635.1566 (Toll Free) 506.635.1566", "5066351566")).toBeNull();
   });
 });

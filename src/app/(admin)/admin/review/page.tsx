@@ -230,6 +230,11 @@ export default async function ExtractionReviewQueuePage({ searchParams }: PagePr
             <option value="CERTIFICATION">Certifications</option>
             <option value="EQUIPMENT">Equipment</option>
             <option value="SERVICE_REGION">Service Regions</option>
+            <option value="SERVICE_LISTED">Services (as listed)</option>
+            <option value="PRODUCT_LISTED">Products (as listed)</option>
+            <option value="CERTIFICATION_LISTED">Standards & memberships (as listed)</option>
+            <option value="SOCIAL">Social links</option>
+            <option value="BUSINESS_HOURS">Opening hours</option>
           </select>
         </div>
       </div>
