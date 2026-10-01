@@ -14,7 +14,7 @@ describe("Crawler Discovery, Robots & HTML Parser", () => {
       Crawl-delay: 2
     `;
 
-    const policy = parseRobotsTxt(robotsTxt, "AtlanticSourceBot");
+    const policy = parseRobotsTxt(robotsTxt, "SuplistBot");
     expect(policy.disallowedPaths).toContain("/admin/");
     expect(policy.disallowedPaths).toContain("/private/");
     expect(policy.crawlDelaySeconds).toBe(2);

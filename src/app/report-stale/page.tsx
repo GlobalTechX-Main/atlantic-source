@@ -31,7 +31,7 @@ export default function ReportStalePage() {
             </div>
             <h2 className="text-lg font-bold text-slate-900">Correction Request Submitted</h2>
             <p className="text-xs text-slate-600 max-w-md mx-auto">
-              Thank you for helping keep AtlanticSource accurate. Our admin team will review your report against public provenance records.
+              Thank you for helping keep Suplist accurate. Our admin team will review your report against public provenance records.
             </p>
           </div>
         ) : (

@@ -4,8 +4,8 @@ test.describe("Pre-Demo End-to-End Acceptance Workflows", () => {
 
   test("1. Public Discovery Flow: Search, Filter, and Supplier Profile View", async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveTitle(/AtlanticSource/);
-    await expect(page.locator("h1")).toContainText("AtlanticSource");
+    await expect(page).toHaveTitle(/Suplist/);
+    await expect(page.locator("h1")).toContainText("Suplist");
 
     // Navigate to supplier search page
     await page.goto("/suppliers");

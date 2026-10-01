@@ -8,7 +8,7 @@ export default function PrivacyPage() {
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Privacy Policy</h1>
           <p className="text-slate-500 text-sm mt-1">
-            Information handling practices and PIPEDA compliance context for AtlanticSource.
+            Information handling practices and PIPEDA compliance context for Suplist.
           </p>
         </div>
 
@@ -16,14 +16,14 @@ export default function PrivacyPage() {
           <section className="space-y-2">
             <h2 className="text-base font-semibold text-slate-900">1. Scope & Business Contact Data</h2>
             <p>
-              AtlanticSource indexes public business website information for Atlantic Canadian industrial service providers (New Brunswick, Nova Scotia, Newfoundland & Labrador, Prince Edward Island). We collect business contact information (Company Name, Business Phone, Business Email, Work Title, Physical Address) for the purpose of facilitating B2B supplier discovery and sourcing requests.
+              Suplist indexes public business website information for Atlantic Canadian industrial service providers (New Brunswick, Nova Scotia, Newfoundland & Labrador, Prince Edward Island). We collect business contact information (Company Name, Business Phone, Business Email, Work Title, Physical Address) for the purpose of facilitating B2B supplier discovery and sourcing requests.
             </p>
           </section>
 
           <section className="space-y-2">
             <h2 className="text-base font-semibold text-slate-900">2. Public Crawler & Data Provenance</h2>
             <p>
-              Capability claims, certification mentions, and service locations are extracted from public company websites via our automated crawler (<code className="text-atlantic-700">AtlanticSourceBot/1.0</code>). All extracted claims preserve explicit source provenance (URL, character offset, raw text snippet) and start in an unreviewed draft state prior to human admin review.
+              Capability claims, certification mentions, and service locations are extracted from public company websites via our automated crawler (<code className="text-atlantic-700">SuplistBot/1.0</code>). All extracted claims preserve explicit source provenance (URL, character offset, raw text snippet) and start in an unreviewed draft state prior to human admin review.
             </p>
           </section>
 

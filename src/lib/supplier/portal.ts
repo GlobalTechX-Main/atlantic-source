@@ -80,7 +80,7 @@ export async function addSupplierCapability(
     overrideState?.verificationState === VerificationStateEnum.VERIFIED
   ) {
     throw new ForbiddenError(
-      "Suppliers cannot promote capabilities or profiles to AtlanticSource Verified state."
+      "Suppliers cannot promote capabilities or profiles to Suplist Verified state."
     );
   }
 
@@ -146,7 +146,7 @@ export async function submitSupplierCertification(
     overrideState?.verificationState === VerificationStateEnum.VERIFIED
   ) {
     throw new ForbiddenError(
-      "Suppliers cannot promote certifications to AtlanticSource Verified state."
+      "Suppliers cannot promote certifications to Suplist Verified state."
     );
   }
 

@@ -102,7 +102,7 @@ export default function CSVImportWizardPage() {
       {/* Step 2: Mapping */}
       {step === "MAPPING" && (
         <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm">
-          <h3 className="text-base font-semibold text-slate-900">Map CSV Columns to AtlanticSource Schema</h3>
+          <h3 className="text-base font-semibold text-slate-900">Map CSV Columns to Suplist Schema</h3>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Company Name Column</label>

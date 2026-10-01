@@ -230,7 +230,7 @@ function ResponseContent() {
         </div>
 
         <div className="bg-gradient-to-r from-atlantic-50 to-indigo-50 border border-atlantic-200 rounded-2xl p-6 text-center space-y-3">
-          <h3 className="text-base font-bold text-slate-900">Manage Your AtlanticSource Supplier Profile</h3>
+          <h3 className="text-base font-bold text-slate-900">Manage Your Suplist Supplier Profile</h3>
           <p className="text-xs text-slate-600 max-w-md mx-auto">
             {data.claimCTA.message}
           </p>

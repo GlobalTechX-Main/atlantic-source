@@ -84,7 +84,7 @@ export function calculateContactConfidence(
         contact.verificationState === "APPROVED"
       ) {
         currentScore += 20;
-        reasons.push("Contact verified by AtlanticSource platform admin or claimed supplier");
+        reasons.push("Contact verified by Suplist platform admin or claimed supplier");
       }
     }
 

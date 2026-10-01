@@ -45,7 +45,7 @@ describe("Supplier Portal & Profile Management Engine", () => {
     expect(res.id).toBeDefined();
   });
 
-  it("CRITICAL RULE: Prohibits supplier from promoting itself to AtlanticSource VERIFIED", async () => {
+  it("CRITICAL RULE: Prohibits supplier from promoting itself to Suplist VERIFIED", async () => {
     await expect(
       addSupplierCapability(
         supplierAUser,
@@ -53,7 +53,7 @@ describe("Supplier Portal & Profile Management Engine", () => {
         { capabilityId: "cap_welding" },
         { provenanceType: "VERIFIED", verificationState: "VERIFIED" }
       )
-    ).rejects.toThrow("Suppliers cannot promote capabilities or profiles to AtlanticSource Verified state.");
+    ).rejects.toThrow("Suppliers cannot promote capabilities or profiles to Suplist Verified state.");
 
     await expect(
       submitSupplierCertification(
@@ -62,7 +62,7 @@ describe("Supplier Portal & Profile Management Engine", () => {
         { certificationId: "cwb-w47-1" },
         { provenanceType: "VERIFIED", verificationState: "VERIFIED" }
       )
-    ).rejects.toThrow("Suppliers cannot promote certifications to AtlanticSource Verified state.");
+    ).rejects.toThrow("Suppliers cannot promote certifications to Suplist Verified state.");
   });
 
   it("enforces SUPPLIER_ADMIN requirement for managing team members", async () => {

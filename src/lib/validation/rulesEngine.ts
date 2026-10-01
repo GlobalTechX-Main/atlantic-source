@@ -132,7 +132,7 @@ export function evaluateDeterministicRules(input: ValidationInput): ValidationRe
   }
 
   // 4. High-Risk Rule: Certification Safeguard
-  // Certifications can NEVER be marked AtlanticSource Verified automatically.
+  // Certifications can NEVER be marked Suplist Verified automatically.
   // They require human review before verification or publishing.
   if (input.claimType === "CERTIFICATION") {
     return {

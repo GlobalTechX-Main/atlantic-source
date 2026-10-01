@@ -70,7 +70,7 @@ export default function SupplierPortalPage() {
         </div>
 
         <p className="text-xs text-slate-600 leading-relaxed">
-          Your company profile is claimed and active. You have Supplier Admin authority to edit profile details and manage team access. Note: Only GTEX platform administrators can approve claims to full AtlanticSource Verified status.
+          Your company profile is claimed and active. You have Supplier Admin authority to edit profile details and manage team access. Note: Only GTEX platform administrators can approve claims to full Suplist Verified status.
         </p>
       </div>
     </div>

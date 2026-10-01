@@ -3,7 +3,7 @@ export interface RobotsPolicy {
   crawlDelaySeconds?: number;
 }
 
-export function parseRobotsTxt(content: string, userAgent: string = "AtlanticSourceBot"): RobotsPolicy {
+export function parseRobotsTxt(content: string, userAgent: string = "SuplistBot"): RobotsPolicy {
   const disallowedPaths: string[] = [];
   let crawlDelaySeconds: number | undefined;
 

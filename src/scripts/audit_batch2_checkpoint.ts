@@ -6,7 +6,7 @@ import { isUsableRfqEmail, isUsableRfqPhone } from './reconcile_human_review';
 
 async function auditBatch2Checkpoint() {
   console.log('===============================================================');
-  console.log('      ATLANTICSOURCE BATCH 2 CHECKPOINT & RECALIBRATION AUDIT  ');
+  console.log('      SUPLIST BATCH 2 CHECKPOINT & RECALIBRATION AUDIT  ');
   console.log('===============================================================\n');
 
   const domains = BATCH_2_SUPPLIERS.map(s => s.domain);

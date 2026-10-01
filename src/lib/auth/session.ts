@@ -81,7 +81,7 @@ export async function getCurrentUserSession(): Promise<UserSession | null> {
     return {
       id: "usr_admin_dev",
       email: "admin@atlanticsource.ca",
-      name: "AtlanticSource Admin",
+      name: "Suplist Admin",
       isPlatformAdmin: true,
       buyerMemberships: [],
       supplierMemberships: [],

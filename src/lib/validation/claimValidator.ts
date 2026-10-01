@@ -12,7 +12,7 @@ export const ValidationResultSchema = z.object({
 });
 
 export class HeuristicClaimValidator implements ClaimValidator {
-  name = "AtlanticSourceClaimValidator";
+  name = "SuplistClaimValidator";
   version = "1.0.0";
 
   async validateClaim(input: ValidationInput): Promise<ValidationResult> {

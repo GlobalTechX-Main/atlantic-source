@@ -7,12 +7,18 @@ interface LogoProps {
   suffix?: string;
 }
 
-/** The one AtlanticSource brand mark used everywhere. */
+/** The one Suplist brand mark used everywhere. */
 export function Logo({ tone = "light", href = "/", suffix }: LogoProps) {
   return (
-    <Link href={href} className="flex items-center gap-2 font-extrabold text-lg tracking-tight">
-      <span className="w-8 h-8 rounded-lg bg-atlantic-600 text-white flex items-center justify-center text-xs font-black">AS</span>
-      <span className={tone === "dark" ? "text-white" : "text-slate-900"}>AtlanticSource</span>
+    <Link href={href} className="flex items-center gap-2" aria-label="Suplist home">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={tone === "dark" ? "/brand/suplist-logo-white.png" : "/brand/suplist-logo.png"}
+        alt="Suplist"
+        width={389}
+        height={113}
+        className="h-8 w-auto"
+      />
       {suffix && (
         <span className="ml-1 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
           {suffix}

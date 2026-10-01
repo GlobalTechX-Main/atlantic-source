@@ -1,14 +1,14 @@
 # AGENTS.md — Permanent Engineering Instructions for AI Coding Agents
 
 ## 1. Core Mandate
-You are working on **AtlanticSource**, a B2B supplier-intelligence and sourcing platform for Atlantic Canada. All future AI coding agents (Codex, Antigravity, Claude, etc.) operating in this repository MUST strictly comply with the engineering rules, architectural boundaries, and security policies in this document.
+You are working on **Suplist**, a B2B supplier-intelligence and sourcing platform for Atlantic Canada. All future AI coding agents (Codex, Antigravity, Claude, etc.) operating in this repository MUST strictly comply with the engineering rules, architectural boundaries, and security policies in this document.
 
 ---
 
 ## 2. Fundamental Engineering Rules
 
-### Rule 1: Understand AtlanticSource Scope Before Making Changes
-- AtlanticSource is a B2B platform focused on market validation in Atlantic Canada (initially New Brunswick: Fredericton, Saint John, Moncton) across 12 specific industrial service categories.
+### Rule 1: Understand Suplist Scope Before Making Changes
+- Suplist is a B2B platform focused on market validation in Atlantic Canada (initially New Brunswick: Fredericton, Saint John, Moncton) across 12 specific industrial service categories.
 - Do NOT alter core domain concepts or add speculative features (e.g. social networking, public reviews, payment processing, global multi-currency) unless explicitly requested in a task prompt.
 
 ### Rule 2: Strict TypeScript Enforcement

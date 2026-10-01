@@ -15,7 +15,7 @@ export default function DataSourcesPage() {
           <section className="space-y-2">
             <h2 className="text-base font-semibold text-slate-900">1. Public Company Websites</h2>
             <p>
-              AtlanticSource indexes public company websites for industrial suppliers operating in New Brunswick (Fredericton, Saint John, Moncton) and Atlantic Canada across 12 core category domains (Structural Steel, Stainless Steel, Pipe Fabrication, Machining, Welding, Electrical Contracting, Mechanical/HVAC, Plumbing, Field Installation, Equipment Maintenance, Instrumentation, Industrial Cleaning).
+              Suplist indexes public company websites for industrial suppliers operating in New Brunswick (Fredericton, Saint John, Moncton) and Atlantic Canada across 12 core category domains (Structural Steel, Stainless Steel, Pipe Fabrication, Machining, Welding, Electrical Contracting, Mechanical/HVAC, Plumbing, Field Installation, Equipment Maintenance, Instrumentation, Industrial Cleaning).
             </p>
           </section>
 
@@ -38,8 +38,8 @@ export default function DataSourcesPage() {
                 <p className="text-[11px] text-slate-500">Added or updated directly by verified company representatives via portal.</p>
               </div>
               <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200 space-y-1">
-                <div className="text-xs font-bold text-emerald-700 uppercase">AtlanticSource Verified</div>
-                <p className="text-[11px] text-slate-500">Reviewed and verified by AtlanticSource platform admin team.</p>
+                <div className="text-xs font-bold text-emerald-700 uppercase">Suplist Verified</div>
+                <p className="text-[11px] text-slate-500">Reviewed and verified by Suplist platform admin team.</p>
               </div>
             </div>
           </section>

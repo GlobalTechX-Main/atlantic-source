@@ -82,7 +82,7 @@ export class DevelopmentEmailProvider implements EmailProvider {
       : "Not specified";
 
     const emailBody = `
-New Sourcing Request via AtlanticSource
+New Sourcing Request via Suplist
 
 Buyer: ${payload.buyerOrgName}
 Requirement: ${payload.rfqTitle}
@@ -282,7 +282,7 @@ export class ResendEmailProvider implements EmailProvider {
       : "Not specified";
 
     const emailBody = `
-New Sourcing Request via AtlanticSource
+New Sourcing Request via Suplist
 
 Buyer: ${payload.buyerOrgName}
 Requirement: ${payload.rfqTitle}

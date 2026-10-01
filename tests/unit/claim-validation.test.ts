@@ -122,8 +122,8 @@ describe("Automated Claim Validation Layer & Safety Matrix", () => {
     expect(res.reason).toContain("prompt injection");
   });
 
-  // 7. Certification Mention -> PUBLICLY_DISCOVERED Tag (Never AtlanticSource Verified)
-  it("7. Certification mentions can NEVER grant AtlanticSource Verified status automatically", async () => {
+  // 7. Certification Mention -> PUBLICLY_DISCOVERED Tag (Never Suplist Verified)
+  it("7. Certification mentions can NEVER grant Suplist Verified status automatically", async () => {
     const input: ValidationInput = {
       supplierCompanyId: "comp_test_1",
       supplierName: "Quality Machining Corp",
@@ -150,7 +150,7 @@ describe("Automated Claim Validation Layer & Safety Matrix", () => {
       reason: "Validation output format failure, routed to human review",
       evidenceSupported: false,
       validatorVersion: "1.0.0",
-      validatorActor: "AtlanticSourceClaimValidator:SAFE_FALLBACK",
+      validatorActor: "SuplistClaimValidator:SAFE_FALLBACK",
     });
 
     const input: ValidationInput = {

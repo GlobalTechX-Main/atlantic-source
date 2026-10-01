@@ -15,14 +15,14 @@ export default function TermsPage() {
           <section className="space-y-2">
             <h2 className="text-base font-semibold text-slate-900">1. Platform Scope & Purpose</h2>
             <p>
-              AtlanticSource is a B2B supplier-intelligence and sourcing request platform. It facilitates discovery, matching, concise outreach, and preliminary quote exchanges between commercial buyers and Atlantic Canadian industrial suppliers.
+              Suplist is a B2B supplier-intelligence and sourcing request platform. It facilitates discovery, matching, concise outreach, and preliminary quote exchanges between commercial buyers and Atlantic Canadian industrial suppliers.
             </p>
           </section>
 
           <section className="space-y-2">
             <h2 className="text-base font-semibold text-slate-900">2. Non-Binding Indicative Quotes</h2>
             <p>
-              All pricing, lead times, or terms submitted through AtlanticSource response links are strictly non-binding indicative estimates. AtlanticSource does not execute binding legal contracts, handle payments, escrow, or project management. Commercial agreements must be executed directly between buyer and supplier.
+              All pricing, lead times, or terms submitted through Suplist response links are strictly non-binding indicative estimates. Suplist does not execute binding legal contracts, handle payments, escrow, or project management. Commercial agreements must be executed directly between buyer and supplier.
             </p>
           </section>
 

@@ -4,7 +4,7 @@ import { SupplierCartDrawer, SupplierCartProvider } from "@/components/rfq/Suppl
 import { SiteChrome } from "@/components/layout/SiteChrome";
 
 export const metadata: Metadata = {
-  title: "AtlanticSource — B2B Supplier Intelligence & Sourcing",
+  title: "Suplist — B2B Supplier Intelligence & Sourcing",
   description: "B2B supplier intelligence and sourcing marketplace for Atlantic Canada (Fredericton, Saint John, Moncton). Discover verified industrial suppliers and request quotes.",
 };
 

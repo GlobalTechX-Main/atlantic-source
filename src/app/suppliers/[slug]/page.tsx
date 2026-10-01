@@ -445,7 +445,7 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
                 ))}
               </ul>
               <p className="text-[11px] text-slate-500">
-                As stated by the company on their website, not verified by AtlanticSource
+                As stated by the company on their website, not verified by Suplist
                 {listedCerts.sources[0] && (
                   <>
                     {" "}(
@@ -491,7 +491,7 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
                   )}
                   {cert.provenanceType === "PUBLICLY_DISCOVERED" && (
                     <p className="text-[10px] text-amber-800 italic pt-1">
-                      Website mention discovered. Not independently verified by AtlanticSource platform admin.
+                      Website mention discovered. Not independently verified by Suplist platform admin.
                     </p>
                   )}
                 </div>
@@ -670,7 +670,7 @@ export default async function SupplierProfilePage({ params }: ProfilePageProps) 
                 <Mail className="w-4 h-4 text-atlantic-600 flex-shrink-0 mt-0.5" />
                 {publicEmails.length > 0 || privateEmailCount > 0 ? (
                   <span>
-                    <strong className="text-slate-800">Send a quote request</strong> from AtlanticSource and we&apos;ll deliver it to their best
+                    <strong className="text-slate-800">Send a quote request</strong> from Suplist and we&apos;ll deliver it to their best
                     business email.
                     {privateEmailCount > 0 &&
                       ` ${privateEmailCount} staff email${privateEmailCount === 1 ? " is" : "s are"} on file and kept private.`}

@@ -29,7 +29,7 @@ export interface UsableContactAudit {
 
 async function runReconciliation() {
   console.log('===============================================================');
-  console.log('      ATLANTICSOURCE BATCH 1 RECONCILIATION & INTEGRITY AUDIT   ');
+  console.log('      SUPLIST BATCH 1 RECONCILIATION & INTEGRITY AUDIT   ');
   console.log('===============================================================\n');
 
   const domains = BATCH_1_SUPPLIERS.map(s => s.domain);

@@ -572,7 +572,7 @@ function getMockAdminPreviewData(slug: string): AdminSupplierProfileData {
     canonicalName: "Mock Admin Preview Supplier Ltd",
     legalName: "Mock Admin Preview Supplier Ltd",
     slug: slug || "mock-admin-preview-slug",
-    description: "Draft supplier under operational evaluation for AtlanticSource platform.",
+    description: "Draft supplier under operational evaluation for Suplist platform.",
     websiteUrl: "https://mockadminpreview.example.com",
     normalizedDomain: "mockadminpreview.example.com",
     yearFounded: 2018,

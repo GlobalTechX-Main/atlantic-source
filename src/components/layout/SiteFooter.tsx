@@ -55,7 +55,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-slate-200">
         <div className="max-w-6xl mx-auto px-4 py-5 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-          <span>© {new Date().getFullYear()} AtlanticSource. Supplier details come from public company websites.</span>
+          <span>© {new Date().getFullYear()} Suplist. Supplier details come from public company websites.</span>
           <span>New Brunswick · Nova Scotia · PEI · Newfoundland &amp; Labrador</span>
         </div>
       </div>

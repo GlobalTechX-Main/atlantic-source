@@ -111,9 +111,9 @@ describe("Mandatory Negative Authorization Checks (RBAC)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 4. Supplier cannot mark itself AtlanticSource Verified
+  // 4. Supplier cannot mark itself Suplist Verified
   // ---------------------------------------------------------------------------
-  it("4. Supplier cannot mark itself AtlanticSource Verified", () => {
+  it("4. Supplier cannot mark itself Suplist Verified", () => {
     expect(() => requirePlatformAdmin(supplierAdminA)).toThrow(ForbiddenError);
   });
 

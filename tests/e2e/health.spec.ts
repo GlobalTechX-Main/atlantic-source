@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("System Health & Foundation E2E", () => {
-  test("homepage loads with AtlanticSource title", async ({ page }) => {
+  test("homepage loads with Suplist title", async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveTitle(/AtlanticSource/);
-    await expect(page.locator("h1")).toContainText("AtlanticSource");
+    await expect(page).toHaveTitle(/Suplist/);
+    await expect(page.locator("h1")).toContainText("Suplist");
   });
 
   test("health check API endpoint responds with valid status JSON", async ({ request }) => {

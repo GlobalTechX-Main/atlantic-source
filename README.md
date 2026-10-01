@@ -1,6 +1,6 @@
-# AtlanticSource
+# Suplist
 
-**AtlanticSource** is a B2B supplier-intelligence and sourcing platform tailored for Atlantic Canada. It enables regional buyers to discover verified suppliers, perform structured keyword and category searches, review evidence-backed capability profiles, and issue sourcing requests (RFQs) with one-click supplier response flows.
+**Suplist** is a B2B supplier-intelligence and sourcing platform tailored for Atlantic Canada. It enables regional buyers to discover verified suppliers, perform structured keyword and category searches, review evidence-backed capability profiles, and issue sourcing requests (RFQs) with one-click supplier response flows.
 
 ---
 

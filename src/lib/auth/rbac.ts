@@ -137,7 +137,7 @@ export function assertCanManageSupplierMembers(
 
 /**
  * 6. Rule: Platform admin authority.
- * Supplier or buyer users CANNOT grant AtlanticSource verification or execute admin functions.
+ * Supplier or buyer users CANNOT grant Suplist verification or execute admin functions.
  */
 export function requirePlatformAdmin(user: UserSession | null): void {
   if (!user) throw new UnauthorizedError("Authentication required");

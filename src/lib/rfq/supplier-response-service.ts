@@ -125,7 +125,7 @@ export async function processOneClickResponse(input: ProcessResponseInput) {
       declineReason: responseObj.declineReason,
     },
     claimCTA: {
-      message: "Claim your company on AtlanticSource to manage this and future opportunities.",
+      message: "Claim your company on Suplist to manage this and future opportunities.",
       url: `/claim?supplierId=${tokenPayload.supplierCompanyId}`,
     },
   };
